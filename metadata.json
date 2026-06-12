@@ -1,0 +1,6 @@
+{
+  "name": "Escape from Tobby",
+  "description": "A top-down 2D survival horror game where you must navigate classroom floors and escape 30 patrolling clones of Tobby.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
