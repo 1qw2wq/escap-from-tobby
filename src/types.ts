@@ -62,6 +62,7 @@ export interface TobbyState {
 
   // Visual offsets for creepy wiggling
   wiggleOffset: number;
+  isHallwaySpecial?: boolean;
 }
 
 export interface PuddleState {
@@ -103,4 +104,13 @@ export interface Doorway {
   maxX: number;
   minY: number;
   maxY: number;
+}
+
+export interface MedicineItemState {
+  id: number;
+  x: number;
+  y: number;
+  roomId: string;
+  healAmount: number;
+  pickedUp: boolean;
 }

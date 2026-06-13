@@ -208,6 +208,36 @@ export const MAP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900
       <path d="M 0,40 A 35,35 0 0,1 30,15" fill="none" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="2 2" />
       <line x1="0" y1="40" x2="30" y2="15" stroke="#cbd5e1" stroke-width="2" />
     </g>
+    <g id="sink-basin">
+      <rect x="0" y="0" width="24" height="24" rx="4" fill="#334155" stroke="#475569" stroke-width="1" />
+      <ellipse cx="12" cy="14" rx="8" ry="7" fill="#f8fafc" stroke="#94a3b8" />
+      <rect x="10" y="2" width="4" height="4" rx="1" fill="#cbd5e1" />
+    </g>
+    <g id="lockers-set">
+      <rect x="0" y="0" width="8" height="60" fill="#475569" stroke="#1e293b" stroke-width="1.5" />
+      <line x1="0" y1="20" x2="8" y2="20" stroke="#1e293b" />
+      <line x1="0" y1="40" x2="8" y2="40" stroke="#1e293b" />
+      <line x1="2" y1="5" x2="6" y2="5" stroke="#334155" />
+      <line x1="2" y1="25" x2="6" y2="25" stroke="#334155" />
+      <line x1="2" y1="45" x2="6" y2="45" stroke="#334155" />
+      <circle cx="5" cy="12" r="1.2" fill="#cbd5e1" />
+      <circle cx="5" cy="32" r="1.2" fill="#cbd5e1" />
+      <circle cx="5" cy="52" r="1.2" fill="#cbd5e1" />
+    </g>
+    <g id="indoor-plant">
+      <circle cx="10" cy="10" r="7" fill="#78350f" stroke="#451a03" stroke-width="1" />
+      <circle cx="10" cy="10" r="5" fill="#15803d" />
+      <path d="M 10,10 C 8,5 12,2 14,5 Q 16,10 10,10" fill="#22c55e" opacity="0.9" />
+      <path d="M 10,10 C 13,12 12,16 6,13 Q 5,8 10,10" fill="#166534" opacity="0.9" />
+      <path d="M 10,10 C 5,7 4,12 6,15 Q 11,15 10,10" fill="#15803d" opacity="0.9" />
+    </g>
+    <g id="school-bench">
+      <rect x="0" y="0" width="10" height="45" rx="2" fill="#7c2d12" stroke="#451a03" stroke-width="1.5" />
+      <rect x="-1.5" y="4" width="2.5" height="4.5" fill="#334155" />
+      <rect x="-1.5" y="37" width="2.5" height="4.5" fill="#334155" />
+      <rect x="9" y="4" width="2.5" height="4.5" fill="#334155" />
+      <rect x="9" y="37" width="2.5" height="4.5" fill="#334155" />
+    </g>
     <g id="door-left">
       <rect x="-2" y="-2" width="4" height="4" fill="#000" />
       <line x1="0" y1="0" x2="40" y2="0" stroke="#d97706" stroke-width="3" />
@@ -281,13 +311,28 @@ export const MAP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900
     <text x="105" y="90" font-family="sans-serif" font-size="10" fill="#ef4444" stroke="none">SPAWN POINT</text>
   </g>
   
-  <!-- Toilets Objects -->
+  <!-- Toilets Objects: Shifted to the right to open up entry clearance -->
   <g transform="translate(530, 720)">
-    <use href="#toilet-stall" x="15" y="10" /><use href="#toilet-stall" x="15" y="50" /><use href="#toilet-stall" x="15" y="90" /><use href="#toilet-stall" x="15" y="130" />
-    <rect x="155" y="25" width="20" height="12" rx="4" fill="#1e293b" stroke="#cbd5e1" stroke-width="1.5" />
-    <rect x="155" y="75" width="20" height="12" rx="4" fill="#1e293b" stroke="#cbd5e1" stroke-width="1.5" />
-    <rect x="155" y="125" width="20" height="12" rx="4" fill="#1e293b" stroke="#cbd5e1" stroke-width="1.5" />
+    <!-- Toilet stalls against the right wall -->
+    <use href="#toilet-stall" x="140" y="10" />
+    <use href="#toilet-stall" x="140" y="55" />
+    <use href="#toilet-stall" x="140" y="100" />
+    
+    <!-- Washing sinks against the left wall at the top -->
+    <use href="#sink-basin" x="15" y="15" />
+    <use href="#sink-basin" x="15" y="45" />
+    <use href="#sink-basin" x="15" y="75" />
   </g>
+  
+  <!-- Hallway Corridor Detailed Furniture Objects -->
+  <use href="#lockers-set" x="502" y="180" />
+  <use href="#lockers-set" x="502" y="400" />
+  <use href="#lockers-set" x="502" y="730" />
+  <use href="#school-bench" x="502" y="470" />
+  <use href="#indoor-plant" x="385" y="45" />
+  <use href="#indoor-plant" x="385" y="875" />
+  <use href="#indoor-plant" x="498" y="875" />
+  <use href="#indoor-plant" x="498" y="45" />
   
   <!-- Thick solid structural wall outlines -->
   <g fill="none" stroke="#64748b" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" opacity="0.85">
@@ -420,7 +465,13 @@ export const ALL_OBSTACLES: GameObstacle[] = [
   { x: 530 + 10, y: 310 + 200, width: 60, height: 50, name: "Cubicle 3" },
   { x: 530 + 120, y: 310 + 200, width: 60, height: 50, name: "Cubicle 4" },
 
-  // Toilets
-  { x: 530 + 15, y: 720 + 10, width: 45, height: 160, name: "Toilet Partition Stalls" },
-  { x: 530 + 150, y: 720 + 20, width: 25, height: 120, name: "Washing Sinks Row" },
+  // Toilets (New accessible layout)
+  { x: 530 + 140, y: 720 + 10, width: 35, height: 130, name: "Toilet Partition Stalls" },
+  { x: 530 + 15, y: 720 + 15, width: 24, height: 85, name: "Washing Sinks Row" },
+
+  // Hallway Obstacles (Lockers, benches)
+  { x: 502, y: 180, width: 8, height: 60, name: "Hallway Lockers 1" },
+  { x: 502, y: 400, width: 8, height: 60, name: "Hallway Lockers 2" },
+  { x: 502, y: 730, width: 8, height: 60, name: "Hallway Lockers 3" },
+  { x: 502, y: 470, width: 10, height: 45, name: "Hallway Bench" },
 ];

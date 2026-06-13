@@ -4,7 +4,7 @@
  */
 
 import React, { useRef, useState, useEffect } from "react";
-import { CharacterClass, PlayerState, TobbyState, AIState, PuddleState, SoundWaveState } from "../types";
+import { CharacterClass, PlayerState, TobbyState, AIState, PuddleState, SoundWaveState, MedicineItemState } from "../types";
 import { ROOMS, ALL_OBSTACLES, MAP_SVG, TOBBY_SVG, RUNNER_SVG, MARCUS_SVG, FAIBE_SVG } from "../data";
 import { isLocationWalkable, getRoomAt, checkLineOfSight, playScreamSound, playRamSound, playPacifySound, playDamageSound, playSoundWaveAttack } from "../utils";
 import { Shield, Sparkles, AlertTriangle, ArrowRight, Home, RefreshCw, Volume2, VolumeX, Eye, Flame, Heart, Zap } from "lucide-react";
@@ -15,6 +15,7 @@ interface GameCanvasProps {
   onFloorComplete: () => void;
   onGameOver: () => void;
   onQuit: () => void;
+  onResetFloor5: () => void;
 }
 
 export function GameCanvas({
@@ -23,6 +24,7 @@ export function GameCanvas({
   onFloorComplete,
   onGameOver,
   onQuit,
+  onResetFloor5,
 }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -71,6 +73,8 @@ export function GameCanvas({
   const tobbysRef = useRef<TobbyState[]>([]);
   const puddlesRef = useRef<PuddleState[]>([]);
   const soundWavesRef = useRef<SoundWaveState[]>([]);
+  const medicinesRef = useRef<MedicineItemState[]>([]);
+  const freshGameRef = useRef<boolean>(true);
   const lastTimeRef = useRef<number>(0);
   const animationFrameIdRef = useRef<number | null>(null);
   const invincibilityTimeRef = useRef<number>(0);
@@ -85,19 +89,18 @@ export function GameCanvas({
     faibe: HTMLImageElement;
   } | null>(null);
 
-  // 1. Level Initialization on Mount or Floor Change
-  useEffect(() => {
+  const initializeLevel = () => {
     // Determine player specs
     const p = playerRef.current;
     
     let px = 625; // Default Staircase A (Top-Right)
     let py = 95;
 
+    // Player spawns only inside classroom units on floor 5
     if (currentFloor === 5) {
       let attempts = 0;
       let found = false;
-      // Filter out Staircase A and B so students do not spawn in the starting case
-      const validRooms = ROOMS.filter(r => r.id !== "StairA" && r.id !== "StairB");
+      const validRooms = ROOMS.filter(r => ["C1", "C2", "C3", "C4", "C5"].includes(r.id));
       while (attempts < 200 && !found) {
         const room = validRooms[Math.floor(Math.random() * validRooms.length)];
         const rx = room.minX + 25 + Math.random() * (room.maxX - room.minX - 50);
@@ -126,10 +129,11 @@ export function GameCanvas({
     invincibilityTimeRef.current = 0;
 
     // Persist or initialize lives across floors
-    if (currentFloor === 5) {
+    if (freshGameRef.current) {
       p.lives = 3;
       p.maxLives = 3;
       setPlayerLives(3);
+      freshGameRef.current = false;
     } else {
       setPlayerLives(p.lives);
     }
@@ -190,12 +194,94 @@ export function GameCanvas({
       });
     }
 
+    // Add 4 more Tobby enemies walking around randomly in the hallway/corridor
+    for (let i = 0; i < 4; i++) {
+      let tx = 380 + 15 + Math.random() * (510 - 380 - 30);
+      let ty = 80 + Math.random() * (850 - 80);
+      let attempts = 0;
+      while (attempts < 100) {
+        tx = 380 + 15 + Math.random() * (510 - 380 - 30);
+        ty = 80 + Math.random() * (850 - 80);
+        if (isLocationWalkable(tx, ty, 10)) {
+          const distToSpawn = Math.sqrt((tx - p.x) ** 2 + (ty - p.y) ** 2);
+          if (distToSpawn > 120) {
+            break;
+          }
+        }
+        attempts++;
+      }
+
+      tobbys.push({
+        id: tobbyId++,
+        x: tx,
+        y: ty,
+        angle: Math.random() * Math.PI * 2,
+        aiState: AIState.IDLE,
+        patrolTargetX: tx,
+        patrolTargetY: ty,
+        speed: 33 + Math.random() * 8, // slight swifter speed in hallway
+        stareTimer: 0,
+        hp: 6,
+        maxHp: 6,
+        playerHitCooldown: 0,
+        flashTime: 0,
+        hitCooldown: 0,
+        scratchCooldown: 0,
+        waterSpillCooldown: 0,
+        stareCooldown: 0,
+        scarySoundCooldown: 0,
+        wiggleOffset: Math.random() * Math.PI * 2,
+        isHallwaySpecial: true,
+      });
+    }
+
     tobbysRef.current = tobbys;
     setTobbyCount(tobbys.length);
+
+    // Spawn medicine items in classrooms and other rooms!
+    const medicines: MedicineItemState[] = [];
+    let medId = 1;
+
+    // Medicine-rich rooms
+    const medicineRooms = ["C1", "C2", "C3", "C4", "C5", "Office1", "Office2", "Toilets"];
+    medicineRooms.forEach((roomId) => {
+      const r = ROOMS.find((room) => room.id === roomId);
+      if (r) {
+        // Spawn 1 medicine in each room
+        let attempts = 0;
+        let spawned = false;
+        while (attempts < 150 && !spawned) {
+          const mx = r.minX + 30 + Math.random() * (r.maxX - r.minX - 60);
+          const my = r.minY + 30 + Math.random() * (r.maxY - r.minY - 60);
+          if (isLocationWalkable(mx, my, 12)) {
+            const distToSpawn = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
+            if (distToSpawn > 40) {
+              medicines.push({
+                id: medId++,
+                x: mx,
+                y: my,
+                roomId: roomId,
+                healAmount: 8, // heals 8 HP
+                pickedUp: false,
+              });
+              spawned = true;
+            }
+          }
+          attempts++;
+        }
+      }
+    });
+
+    medicinesRef.current = medicines;
 
     // Initial React State bindings
     setPlayerHp(p.hp);
     setPlayerMaxHp(p.maxHp);
+  };
+
+  // 1. Level Initialization on Mount or Floor Change
+  useEffect(() => {
+    initializeLevel();
   }, [currentFloor, characterClass]);
 
   // 2. Pre-cache visual SVG Assets
@@ -444,6 +530,50 @@ export function GameCanvas({
     }
     const currentSpeed = inPuddle ? baseSpeed * 0.5 : baseSpeed;
 
+    // --- MEDICINE PICKUP DETECTION ---
+    for (const med of medicinesRef.current) {
+      if (!med.pickedUp) {
+        const distToMed = Math.sqrt((p.x - med.x) ** 2 + (p.y - med.y) ** 2);
+        if (distToMed <= 24) {
+          if (p.hp < p.maxHp) {
+            med.pickedUp = true;
+            p.hp = Math.min(p.maxHp, p.hp + med.healAmount);
+            setPlayerHp(p.hp);
+
+            // Emit visual healing ripples
+            soundWavesRef.current.push({
+              x: med.x,
+              y: med.y,
+              radius: 6,
+              maxRadius: 40,
+              timeLeft: 0.35,
+            });
+
+            // Play healing arpeggio chime tone
+            if (!muted) {
+              try {
+                const c = new (window.AudioContext || (window as any).webkitAudioContext)();
+                if (c) {
+                  const osc = c.createOscillator();
+                  const g = c.createGain();
+                  osc.type = "sine";
+                  osc.frequency.setValueAtTime(523.25, c.currentTime); // C5
+                  osc.frequency.setValueAtTime(659.25, c.currentTime + 0.08); // E5
+                  osc.frequency.setValueAtTime(783.99, c.currentTime + 0.16); // G5
+                  g.gain.setValueAtTime(0.06, c.currentTime);
+                  g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.3);
+                  osc.connect(g);
+                  g.connect(c.destination);
+                  osc.start();
+                  osc.stop(c.currentTime + 0.32);
+                }
+              } catch (err) {}
+            }
+          }
+        }
+      }
+    }
+
     if (dx !== 0 || dy !== 0) {
       // Normalize to prevent diagonal speed boosting
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -618,9 +748,60 @@ export function GameCanvas({
           if (!muted) playSoundWaveAttack();
         }
       } else {
-        // No Line of Sight! Stay stationary out of sight
+        // No Line of Sight! Move towards patrol target (patrol/wander randomly)
         t.stareTimer = 0;
         t.aiState = AIState.IDLE;
+
+        // If we don't have a patrol target or have reached it, pick a new one!
+        const distToPatrol = Math.sqrt((t.patrolTargetX - t.x) ** 2 + (t.patrolTargetY - t.y) ** 2);
+        if (distToPatrol < 15 || !t.patrolTargetX || !t.patrolTargetY) {
+          let foundTarget = false;
+          let attempts = 0;
+          while (attempts < 50 && !foundTarget) {
+            let tx = 0;
+            let ty = 0;
+            if (t.isHallwaySpecial) {
+              // Pick a coordinate inside the Corridor Hallway
+              // Hallway limits: minX: 380, maxX: 510, minY: 40, maxY: 895
+              tx = 380 + 15 + Math.random() * (510 - 380 - 30);
+              ty = 40 + 20 + Math.random() * (895 - 40 - 40);
+            } else {
+              // Pick a coordinate in a random room
+              const room = ROOMS[Math.floor(Math.random() * ROOMS.length)];
+              tx = room.minX + 15 + Math.random() * (room.maxX - room.minX - 30);
+              ty = room.minY + 15 + Math.random() * (room.maxY - room.minY - 30);
+            }
+            if (isLocationWalkable(tx, ty, 10)) {
+              t.patrolTargetX = tx;
+              t.patrolTargetY = ty;
+              foundTarget = true;
+            }
+            attempts++;
+          }
+        }
+
+        // Steer towards the patrol target
+        if (t.patrolTargetX && t.patrolTargetY) {
+          const dx = t.patrolTargetX - t.x;
+          const dy = t.patrolTargetY - t.y;
+          const targetAngle = Math.atan2(dy, dx);
+          
+          t.angle = targetAngle;
+
+          // Walk speed during patrol is slower than chasing speed
+          const patrolSpeed = t.speed ? t.speed * 0.75 : 24;
+          const stepX = Math.cos(t.angle) * patrolSpeed * dt;
+          const stepY = Math.sin(t.angle) * patrolSpeed * dt;
+
+          if (isLocationWalkable(t.x + stepX, t.y + stepY, 10)) {
+            t.x += stepX;
+            t.y += stepY;
+          } else {
+            // If they hit a collision block, clear the target to force choosing a new one
+            t.patrolTargetX = 0;
+            t.patrolTargetY = 0;
+          }
+        }
       }
     });
 
@@ -716,12 +897,12 @@ export function GameCanvas({
     setPlayerLives(p.lives);
 
     if (p.lives > 0) {
-      // Respawn at starting coordinates
-      p.hp = p.maxHp;
-      p.x = spawnCoordsRef.current.x;
-      p.y = spawnCoordsRef.current.y;
-      p.angle = Math.PI / 2;
-      p.scratchDotDuration = 0;
+      // Return to floor 5 inside a classroom
+      if (currentFloor !== 5) {
+        onResetFloor5(); // Triggers the currentFloor state change (which then runs useEffect initializeLevel)
+      } else {
+        initializeLevel(); // Triggers direct re-init on floor 5
+      }
 
       // Reset Tobby aggro on respawn
       tobbysRef.current.forEach((t) => {
@@ -733,11 +914,11 @@ export function GameCanvas({
       invincibilityTimeRef.current = 3.0;
 
       soundWavesRef.current.push({
-        x: p.x,
-        y: p.y,
+        x: playerRef.current.x,
+        y: playerRef.current.y,
         radius: 10,
-         maxRadius: 180,
-         timeLeft: 0.8,
+        maxRadius: 180,
+        timeLeft: 0.8,
       });
 
       if (!muted) playPacifySound();
@@ -821,6 +1002,51 @@ export function GameCanvas({
       ctx.arc(pud.x, pud.y, pud.radius * 0.4, 0, Math.PI * 2);
       ctx.strokeStyle = "rgba(34, 211, 238, 0.25)";
       ctx.stroke();
+    });
+
+     // 2.5. Draw Medicine Items (First Aid Kits)
+    medicinesRef.current.forEach((med) => {
+      if (med.pickedUp) return;
+
+      // Draw pulsating green healing aura under the kit
+      const auraPulse = 8 + Math.sin(Date.now() / 150) * 2.5;
+
+      ctx.beginPath();
+      ctx.arc(med.x, med.y, auraPulse, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(34, 197, 94, 0.15)";
+      ctx.strokeStyle = "rgba(34, 197, 94, 0.45)";
+      ctx.lineWidth = 1.0;
+      ctx.fill();
+      ctx.stroke();
+
+      // Draw briefcase white body
+      ctx.fillStyle = "#f8fafc";
+      ctx.strokeStyle = "#475569";
+      ctx.lineWidth = 1.2;
+
+      const kw = 12;
+      const kh = 9;
+      const kx = med.x - kw / 2;
+      const ky = med.y - kh / 2;
+
+      ctx.beginPath();
+      ctx.rect(kx, ky, kw, kh);
+      ctx.fill();
+      ctx.stroke();
+
+      // Briefcase handle at top
+      ctx.beginPath();
+      ctx.rect(med.x - 2, ky - 2.2, 4, 2.2);
+      ctx.strokeStyle = "#475569";
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+
+      // Red/Green cross symbol
+      ctx.fillStyle = "#22c55e"; // Emerald healing green
+      // Horizontal bar
+      ctx.fillRect(med.x - 3.5, med.y - 1.0, 7.0, 2.0);
+      // Vertical bar
+      ctx.fillRect(med.x - 1.0, med.y - 3.5, 2.0, 7.0);
     });
 
     // 3. Draw sound ripples

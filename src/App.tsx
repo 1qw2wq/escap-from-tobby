@@ -74,6 +74,7 @@ export default function App() {
             onFloorComplete={handleFloorComplete}
             onGameOver={handleGameOver}
             onQuit={handleQuit}
+            onResetFloor5={() => setCurrentFloor(5)}
           />
         </div>
       )}
