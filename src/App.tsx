@@ -7,12 +7,13 @@ import React, { useState } from "react";
 import { CharacterClass } from "./types";
 import { Menu } from "./components/Menu";
 import { GameCanvas } from "./components/GameCanvas";
+import { Intro } from "./components/Intro";
 import { Skull, Trophy, HelpCircle, Footprints, AlertTriangle, ChevronRight, RefreshCw, LogIn, LogOut, Flame } from "lucide-react";
 
-type GameScreen = "MENU" | "PLAYING" | "DESCENDING" | "GAMEOVER" | "WIN";
+type GameScreen = "INTRO" | "MENU" | "PLAYING" | "DESCENDING" | "GAMEOVER" | "WIN";
 
 export default function App() {
-  const [screen, setScreen] = useState<GameScreen>("MENU");
+  const [screen, setScreen] = useState<GameScreen>("INTRO");
   const [selectedClass, setSelectedClass] = useState<CharacterClass>(CharacterClass.RUNNER);
   const [currentFloor, setCurrentFloor] = useState<number>(5);
 
@@ -61,6 +62,10 @@ export default function App() {
       
       {/* Top Status Border line */}
       <div className="h-1.5 w-full bg-gradient-to-r from-red-600 via-rose-500 to-amber-500" />
+
+      {screen === "INTRO" && (
+        <Intro onProceed={() => setScreen("MENU")} />
+      )}
 
       {screen === "MENU" && (
         <Menu onStartGame={handleStartGame} />

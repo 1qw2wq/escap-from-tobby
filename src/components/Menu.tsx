@@ -95,12 +95,7 @@ export function Menu({ onStartGame }: MenuProps) {
                   : "border-slate-800 bg-slate-900/60 text-slate-300 hover:border-slate-700 hover:bg-slate-900/90"
               }`}
             >
-              {/* Highlight badge */}
-              {isSelected && (
-                <span className="absolute top-3 right-3 bg-rose-600 text-white text-[10px] font-mono tracking-wider font-bold py-1 px-2.5 rounded-full uppercase animate-pulse">
-                  Selected
-                </span>
-              )}
+              {/* Highlight badge deleted as per request */}
 
               {/* Character visual SVG wrapper */}
               <div className="h-44 flex items-center justify-center p-2 mb-4 bg-slate-950/80 rounded-xl border border-slate-800/80 overflow-hidden relative">
