@@ -144,6 +144,32 @@ export const FAIBE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4
   </g>
 </svg>`;
 
+// Define the 30 desk layout generator for MAP_SVG
+export const generateSvgDesks = (): string => {
+  let svg = "";
+  const roomYs = [40, 215, 390, 565, 740];
+  for (const rY of roomYs) {
+    // 30 desks per classroom: 6 columns, 5 rows
+    for (let col = 0; col < 6; col++) {
+      for (let row = 0; row < 5; row++) {
+        let offsetX = col * 34;
+        if (col >= 2) offsetX += 15;
+        if (col >= 4) offsetX += 15;
+        
+        const offsetY = row * 21;
+        
+        const x = 18 + offsetX;
+        const y = 16 + offsetY;
+        
+        svg += `  <use href="#desk-set-sm" x="${40 + x}" y="${rY + y}" />\n`;
+      }
+    }
+    // Also teacher desk
+    svg += `  <use href="#teacher-desk" x="${40 + 270}" y="${rY + 60}" transform="rotate(-90, ${40 + 270}, ${rY + 60})" />\n`;
+  }
+  return svg;
+};
+
 export const MAP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1000" width="100%" height="100%">
   <defs>
     <linearGradient id="hallwayFloor" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#1e293b"/><stop offset="100%" stop-color="#0f172a"/></linearGradient>
@@ -157,6 +183,11 @@ export const MAP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900
       <path d="M 12,9 Q 20,13 28,9" fill="none" stroke="#0f172a" stroke-width="1" />
       <rect x="0" y="18" width="40" height="22" rx="2" fill="#92400e" stroke="#451a03" stroke-width="1.5" />
       <rect x="4" y="20" width="32" height="4" fill="#f59e0b" opacity="0.3" />
+    </g>
+    <g id="desk-set-sm">
+      <rect x="3" y="0" width="10" height="4" rx="1" fill="#475569" stroke="#020617" stroke-width="0.75" />
+      <rect x="0" y="5" width="16" height="7" rx="1" fill="#92400e" stroke="#451a03" stroke-width="1" />
+      <rect x="1.5" y="6" width="13" height="1.5" fill="#f59e0b" opacity="0.3" />
     </g>
     <g id="teacher-desk">
       <rect x="15" y="0" width="20" height="18" rx="4" fill="#0f172a" stroke="#000" stroke-width="1" />
@@ -217,32 +248,8 @@ export const MAP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900
   <rect x="530" y="590" width="190" height="110" rx="12" fill="url(#stairFloor)" />
   <rect x="530" y="720" width="190" height="175" rx="12" fill="url(#toiletFloor)" />
   
-  <!-- Classrooms Static Objects -->
-  <g transform="translate(40, 40)">
-    <use href="#teacher-desk" x="250" y="60" transform="rotate(-90, 250, 60)" />
-    <use href="#desk-set" x="40" y="25" /><use href="#desk-set" x="110" y="25" /><use href="#desk-set" x="180" y="25" />
-    <use href="#desk-set" x="40" y="90" /><use href="#desk-set" x="110" y="90" /><use href="#desk-set" x="180" y="90" />
-  </g>
-  <g transform="translate(40, 215)">
-    <use href="#teacher-desk" x="250" y="60" transform="rotate(-90, 250, 60)" />
-    <use href="#desk-set" x="40" y="25" /><use href="#desk-set" x="110" y="25" /><use href="#desk-set" x="180" y="25" />
-    <use href="#desk-set" x="40" y="90" /><use href="#desk-set" x="110" y="90" /><use href="#desk-set" x="180" y="90" />
-  </g>
-  <g transform="translate(40, 390)">
-    <use href="#teacher-desk" x="250" y="60" transform="rotate(-90, 250, 60)" />
-    <use href="#desk-set" x="40" y="25" /><use href="#desk-set" x="110" y="25" /><use href="#desk-set" x="180" y="25" />
-    <use href="#desk-set" x="40" y="90" /><use href="#desk-set" x="110" y="90" /><use href="#desk-set" x="180" y="90" />
-  </g>
-  <g transform="translate(40, 565)">
-    <use href="#teacher-desk" x="250" y="60" transform="rotate(-90, 250, 60)" />
-    <use href="#desk-set" x="40" y="25" /><use href="#desk-set" x="110" y="25" /><use href="#desk-set" x="180" y="25" />
-    <use href="#desk-set" x="40" y="90" /><use href="#desk-set" x="110" y="90" /><use href="#desk-set" x="180" y="90" />
-  </g>
-  <g transform="translate(40, 740)">
-    <use href="#teacher-desk" x="250" y="60" transform="rotate(-90, 250, 60)" />
-    <use href="#desk-set" x="40" y="25" /><use href="#desk-set" x="110" y="25" /><use href="#desk-set" x="180" y="25" />
-    <use href="#desk-set" x="40" y="90" /><use href="#desk-set" x="110" y="90" /><use href="#desk-set" x="180" y="90" />
-  </g>
+  <!-- Classrooms Dynamic Grid Objects (30 desks + 1 teacher desk per classroom) -->
+  ${generateSvgDesks()}
   
   <!-- Office 1 Objects -->
   <g transform="translate(530, 170)">
@@ -357,23 +364,40 @@ export const DOORWAYS: Doorway[] = [
 
 // Desk sizes & locations to populate classroom obstacles
 const getClassroomObstacles = (roomX: number, roomY: number): GameObstacle[] => {
-  const RelativeDesks = [
-    { x: 40, y: 25, w: 40, h: 30 },
-    { x: 110, y: 25, w: 40, h: 30 },
-    { x: 180, y: 25, w: 40, h: 30 },
-    { x: 40, y: 90, w: 40, h: 30 },
-    { x: 110, y: 90, w: 40, h: 30 },
-    { x: 180, y: 90, w: 40, h: 30 },
-    // Teacher's table rotated
-    { x: 240, y: 40, w: 30, h: 50 },
-  ];
-  return RelativeDesks.map(d => ({
-    x: roomX + d.x,
-    y: roomY + d.y,
-    width: d.w,
-    height: d.h,
-    name: "Desk Unit",
-  }));
+  const obstacles: GameObstacle[] = [];
+  
+  // 30 desks aligned with generateSvgDesks
+  for (let col = 0; col < 6; col++) {
+    for (let row = 0; row < 5; row++) {
+      let offsetX = col * 34;
+      if (col >= 2) offsetX += 15;
+      if (col >= 4) offsetX += 15;
+      
+      const offsetY = row * 21;
+      
+      const x = 18 + offsetX;
+      const y = 16 + offsetY;
+      
+      obstacles.push({
+        x: roomX + x,
+        y: roomY + y,
+        width: 16,
+        height: 12,
+        name: "Desk Unit",
+      });
+    }
+  }
+
+  // Teacher desk
+  obstacles.push({
+    x: roomX + 270 - 15, // centered around rotation point
+    y: roomY + 60 - 25,
+    width: 28,
+    height: 50,
+    name: "Teacher Table",
+  });
+
+  return obstacles;
 };
 
 export const ALL_OBSTACLES: GameObstacle[] = [

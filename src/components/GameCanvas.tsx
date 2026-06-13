@@ -7,7 +7,7 @@ import React, { useRef, useState, useEffect } from "react";
 import { CharacterClass, PlayerState, TobbyState, AIState, PuddleState, SoundWaveState } from "../types";
 import { ROOMS, ALL_OBSTACLES, MAP_SVG, TOBBY_SVG, RUNNER_SVG, MARCUS_SVG, FAIBE_SVG } from "../data";
 import { isLocationWalkable, getRoomAt, checkLineOfSight, playScreamSound, playRamSound, playPacifySound, playDamageSound, playSoundWaveAttack } from "../utils";
-import { Shield, Sparkles, AlertTriangle, ArrowRight, Home, RefreshCw, Volume2, VolumeX, Eye, Flame, Heart } from "lucide-react";
+import { Shield, Sparkles, AlertTriangle, ArrowRight, Home, RefreshCw, Volume2, VolumeX, Eye, Flame, Heart, Zap } from "lucide-react";
 
 interface GameCanvasProps {
   characterClass: CharacterClass;
@@ -40,6 +40,11 @@ export function GameCanvas({
   const [isRamActive, setIsRamActive] = useState(false);
   const [isDoTActive, setIsDoTActive] = useState(false);
 
+  // Active melee Strike state
+  const [meleeCd, setMeleeCd] = useState(0);
+  const [meleeStrikeActive, setMeleeStrikeActive] = useState(false);
+  const meleeCdRef = useRef<number>(0);
+
   // Keep keyboard state
   const keysPressedRef = useRef<{ [key: string]: boolean }>({});
 
@@ -69,6 +74,7 @@ export function GameCanvas({
   const lastTimeRef = useRef<number>(0);
   const animationFrameIdRef = useRef<number | null>(null);
   const invincibilityTimeRef = useRef<number>(0);
+  const spawnCoordsRef = useRef<{ x: number; y: number }>({ x: 625, y: 95 });
 
   // Load vector layout textures inside cache
   const imagesCachedRef = useRef<{
@@ -83,8 +89,31 @@ export function GameCanvas({
   useEffect(() => {
     // Determine player specs
     const p = playerRef.current;
-    p.x = 625; // Staircase A (Top-Right)
-    p.y = 95;
+    
+    let px = 625; // Default Staircase A (Top-Right)
+    let py = 95;
+
+    if (currentFloor === 5) {
+      let attempts = 0;
+      let found = false;
+      // Filter out Staircase A and B so students do not spawn in the starting case
+      const validRooms = ROOMS.filter(r => r.id !== "StairA" && r.id !== "StairB");
+      while (attempts < 200 && !found) {
+        const room = validRooms[Math.floor(Math.random() * validRooms.length)];
+        const rx = room.minX + 25 + Math.random() * (room.maxX - room.minX - 50);
+        const ry = room.minY + 25 + Math.random() * (room.maxY - room.minY - 50);
+        if (isLocationWalkable(rx, ry, 14)) {
+          px = rx;
+          py = ry;
+          found = true;
+        }
+        attempts++;
+      }
+    }
+
+    p.x = px;
+    p.y = py;
+    spawnCoordsRef.current = { x: px, y: py };
     p.hp = characterClass === CharacterClass.MARCUS ? 30 : characterClass === CharacterClass.RUNNER ? 20 : 15;
     p.maxHp = characterClass === CharacterClass.MARCUS ? 30 : characterClass === CharacterClass.RUNNER ? 20 : 15;
     p.speed = characterClass === CharacterClass.RUNNER ? 75 : 50;
@@ -129,8 +158,8 @@ export function GameCanvas({
         ty = room.minY + 25 + Math.random() * (room.maxY - room.minY - 50);
 
         if (isLocationWalkable(tx, ty, 10)) {
-          // Keep clear of the player starting zone (Staircase A)
-          const distToSpawn = Math.sqrt((tx - 625) ** 2 + (ty - 95) ** 2);
+          // Keep clear of the player starting zone (Dynamic/Randomized coordinates)
+          const distToSpawn = Math.sqrt((tx - p.x) ** 2 + (ty - p.y) ** 2);
           if (distToSpawn > 120) {
             break;
           }
@@ -202,6 +231,12 @@ export function GameCanvas({
         e.preventDefault();
         triggerSpecialAbility();
       }
+
+      // Punch/Hit key binding
+      if (key === "e" || key === "f") {
+        e.preventDefault();
+        triggerMeleeStrike();
+      }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -218,7 +253,82 @@ export function GameCanvas({
     };
   }, []);
 
-  // 4. Trigger Unique Active Abilities
+  // 4. Trigger Melee Hit Active Skill (Punch/Strike)
+  const triggerMeleeStrike = () => {
+    const p = playerRef.current;
+    if (p.hp <= 0) return;
+    if (meleeCdRef.current > 0) return;
+
+    meleeCdRef.current = 0.35; // 0.35s rapid cooldown
+    setMeleeCd(0.35);
+
+    // Set visual state to render a neon slash arc
+    setMeleeStrikeActive(true);
+    setTimeout(() => {
+      setMeleeStrikeActive(false);
+    }, 120);
+
+    let hitAny = false;
+    tobbysRef.current.forEach((t) => {
+      const dist = Math.sqrt((t.x - p.x) ** 2 + (t.y - p.y) ** 2);
+      if (dist <= 55) { // short-range active hit radius
+        const angleToTobby = Math.atan2(t.y - p.y, t.x - p.x);
+        const angleDiff = Math.abs(normalizeAngle(p.angle - angleToTobby));
+        
+        if (angleDiff <= (85 * Math.PI) / 180) { // Facing hemisphere
+          // Deal active damage (2 pts)
+          t.hp -= 2;
+          t.flashTime = 0.22; // flash red
+          t.playerHitCooldown = 0.2; // brief damage immune state
+          
+          // Knocks back the Tobby student clone slightly!
+          const knockback = 28;
+          const nextTx = t.x + Math.cos(angleToTobby) * knockback;
+          const nextTy = t.y + Math.sin(angleToTobby) * knockback;
+          
+          if (isLocationWalkable(nextTx, nextTy, 10)) {
+            t.x = nextTx;
+            t.y = nextTy;
+          }
+
+          hitAny = true;
+
+          // Sound wave/strike visual impact dots
+          soundWavesRef.current.push({
+            x: t.x,
+            y: t.y,
+            radius: 4,
+            maxRadius: 28,
+            timeLeft: 0.15,
+          });
+        }
+      }
+    });
+
+    if (hitAny) {
+      if (!muted) playDamageSound(false);
+    } else {
+      // Create a cute short swish audio tone
+      if (!muted) {
+        try {
+          const c = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const osc = c.createOscillator();
+          const g = c.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(320, c.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(680, c.currentTime + 0.1);
+          g.gain.setValueAtTime(0.04, c.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.11);
+          osc.connect(g);
+          g.connect(c.destination);
+          osc.start();
+          osc.stop(c.currentTime + 0.12);
+        } catch(e) {}
+      }
+    }
+  };
+
+  // 4b. Trigger Unique Active Abilities
   const triggerSpecialAbility = () => {
     const p = playerRef.current;
     if (p.abilityCooldown > 0) return; // on cooldown!
@@ -287,6 +397,13 @@ export function GameCanvas({
       if (p.abilityCooldown < 0) p.abilityCooldown = 0;
     }
 
+    // Decrement active Melee Strike (punch) cooldown
+    if (meleeCdRef.current > 0) {
+      meleeCdRef.current -= dt;
+      if (meleeCdRef.current < 0) meleeCdRef.current = 0;
+      setMeleeCd(meleeCdRef.current);
+    }
+
     // --- B. DAMAGE OVER TIME (DoT) SCRATCH ---
     if (p.scratchDotDuration > 0) {
       p.scratchDotDuration -= dt;
@@ -339,7 +456,7 @@ export function GameCanvas({
       // Perform slide collision checking against walls and static obstacles
       const nextX = p.x + moveX;
       const nextY = p.y + moveY;
-      const radius = 12; // Player body physical collision bounding circle
+      const radius = 14; // Player body physical collision bounding circle (refined)
 
       if (isLocationWalkable(nextX, nextY, radius)) {
         p.x = nextX;
@@ -599,10 +716,10 @@ export function GameCanvas({
     setPlayerLives(p.lives);
 
     if (p.lives > 0) {
-      // Respawn at starting Staircase A
+      // Respawn at starting coordinates
       p.hp = p.maxHp;
-      p.x = 625;
-      p.y = 95;
+      p.x = spawnCoordsRef.current.x;
+      p.y = spawnCoordsRef.current.y;
       p.angle = Math.PI / 2;
       p.scratchDotDuration = 0;
 
@@ -666,7 +783,7 @@ export function GameCanvas({
     if (!cache) return;
 
     const p = playerRef.current;
-    const zoom = 1.6;
+    const zoom = 2.3;
 
     // Calculate translation offsets to focus camera on player center coordinates
     let tx = canvas.width / 2 - p.x * zoom;
@@ -798,18 +915,46 @@ export function GameCanvas({
         ctx.stroke();
       }
 
-      // Draw Tobby body vector
-      const wiggleY = Math.sin(t.wiggleOffset) * 2;
+      // Draw Tobby body vector with walking animation feet underneath
       const angle = t.angle + Math.PI / 2; // SVG default downward coordinate
       
       ctx.save();
-      ctx.translate(t.x + wiggleY, t.y);
+      ctx.translate(t.x, t.y);
       ctx.rotate(angle);
+
+      // Tobby's walking legs animation
+      let tobbyFootLeft = 0;
+      let tobbyFootRight = 0;
+      if (t.aiState === AIState.CHASING) {
+        const cycle = Date.now() / 95;
+        tobbyFootLeft = Math.sin(cycle) * 7;
+        tobbyFootRight = -Math.sin(cycle) * 7;
+      } else {
+        const cycle = Date.now() / 320;
+        tobbyFootLeft = Math.sin(cycle) * 1.5;
+        tobbyFootRight = -Math.sin(cycle) * 1.5;
+      }
+
+      ctx.fillStyle = "#1e293b";
+      ctx.strokeStyle = "#475569";
+      ctx.lineWidth = 1.0;
+
+      // Draw left foot / shoe sliding local walking Y
+      ctx.beginPath();
+      ctx.arc(-6, 20 + tobbyFootLeft, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Draw right foot / shoe
+      ctx.beginPath();
+      ctx.arc(6, 20 + tobbyFootRight, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
       
       if (isFlashActive) {
         ctx.filter = "brightness(2) sepia(1) hue-rotate(-50deg) saturate(3)";
       }
-      ctx.drawImage(cache.tobby, -10, -20, 20, 40);
+      ctx.drawImage(cache.tobby, -14, -28, 28, 56);
       if (isFlashActive) {
         ctx.filter = "none";
       }
@@ -843,15 +988,83 @@ export function GameCanvas({
       ctx.stroke();
     }
 
-    // Draw player asset frame
+    // Draw player feet / walking style anim underneath body
+    const keys = keysPressedRef.current;
+    const isMoving = !!(keys["w"] || keys["arrowup"] || keys["s"] || keys["arrowdown"] || keys["a"] || keys["arrowleft"] || keys["d"] || keys["arrowright"]);
+
+    // Left and right feet oscillating offsets based on walk motion
+    let footOffsetLeft = 0;
+    let footOffsetRight = 0;
+    if (isMoving) {
+      const cycle = Date.now() / 105;
+      footOffsetLeft = Math.sin(cycle) * 7.5;
+      footOffsetRight = -Math.sin(cycle) * 7.5;
+    }
+
+    // Draw feet relative to player's center and heading direction
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.angle + Math.PI / 2);
+
+    ctx.fillStyle = "#1e293b";
+    ctx.strokeStyle = "#475569";
+    ctx.lineWidth = 1.0;
+
+    // Left foot
+    ctx.beginPath();
+    ctx.arc(-8, 12 + footOffsetLeft, 3.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Right foot
+    ctx.beginPath();
+    ctx.arc(8, 12 + footOffsetRight, 3.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // Draw active Melee strike crescent swing sweep arc
+    if (meleeStrikeActive) {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.angle); // orientation facing forward
+      
+      // glowing cyan outer slice
+      ctx.beginPath();
+      ctx.arc(0, 0, 36, -Math.PI / 3, Math.PI / 3);
+      ctx.strokeStyle = "rgba(34, 211, 238, 0.9)";
+      ctx.lineWidth = 4.5;
+      ctx.stroke();
+
+      // pure white inner edge
+      ctx.beginPath();
+      ctx.arc(0, 0, 36, -Math.PI / 4, Math.PI / 4);
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      
+      ctx.restore();
+    }
+
+    // Draw player asset frame (Scaled up from 24x24 to 38x38)
     const playerImg = characterClass === CharacterClass.RUNNER ? cache.runner : characterClass === CharacterClass.MARCUS ? cache.marcus : cache.faibe;
     const playerAngle = p.angle + Math.PI / 2;
 
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(playerAngle);
-    ctx.drawImage(playerImg, -12, -12, 24, 24);
+    ctx.drawImage(playerImg, -19, -19, 38, 38);
     ctx.restore();
+
+    // Draw dynamic dark area vignette flashlight/lantern spotlight center focus overlay (covers 900x1000)
+    const vignetteGrad = ctx.createRadialGradient(p.x, p.y, 45, p.x, p.y, 230);
+    vignetteGrad.addColorStop(0, "rgba(2, 6, 23, 0.0)");      // full light center focus core
+    vignetteGrad.addColorStop(0.35, "rgba(2, 6, 23, 0.35)");  // soft focal fade-off begins
+    vignetteGrad.addColorStop(0.8, "rgba(2, 6, 23, 0.94)");   // dark shadows
+    vignetteGrad.addColorStop(1, "rgba(2, 6, 23, 1.0)");      // pure vignette pitch blackness on edges
+    
+    ctx.fillStyle = vignetteGrad;
+    ctx.fillRect(0, 0, 900, 1000);
 
     // Restore opacity alpha and zoom matrices
     ctx.globalAlpha = 1.0;
@@ -1036,6 +1249,44 @@ export function GameCanvas({
                 </div>
               </div>
             </div>
+
+            {/* MELEE HIT ATTACK SKILL */}
+            <div className={`p-4 rounded-xl border flex gap-3.5 items-center relative transition-all ${
+              meleeCd > 0 ? "bg-slate-900/20 border-slate-900" : "bg-cyan-950/20 border-cyan-900/40 shadow-lg shadow-cyan-950/5"
+            }`}>
+              
+              {/* Circular gauge */}
+              <div className="w-14 h-14 rounded-full border-2 border-slate-800 flex items-center justify-center relative overflow-hidden bg-slate-950">
+                {meleeCd > 0 ? (
+                  <span className="text-[11px] font-bold text-cyan-400 font-mono">
+                    {Math.ceil(meleeCd * 10) / 10}s
+                  </span>
+                ) : (
+                  <span className="text-cyan-400 font-bold text-xs flex flex-col items-center gap-0.5 leading-none animate-pulse">
+                    <Zap size={14} />
+                    <span>RDY</span>
+                  </span>
+                )}
+                
+                {/* Cooldown slide mask */}
+                <span
+                  className="absolute bottom-0 left-0 right-0 bg-cyan-500/10 pointer-events-none transition-all"
+                  style={{ height: `${100 - (meleeCd / 0.35) * 100}%` }}
+                />
+              </div>
+
+              {/* Skill label and descriptions */}
+              <div className="flex-1 text-left">
+                <div className="font-bold text-xs text-slate-200 flex items-center justify-between">
+                  <span>Melee Punch Strike</span>
+                  <span className="px-1.5 py-0.5 text-[9px] bg-cyan-900/60 text-cyan-300 border border-cyan-600/40 rounded uppercase font-bold tracking-wider">Key E / F / Click</span>
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1.5 leading-normal">
+                  Punches Tobby backward dealing <span className="font-bold text-cyan-300">2 damage</span> on contact. Cooldown 0.35s.
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
 
