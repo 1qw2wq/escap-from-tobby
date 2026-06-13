@@ -4,7 +4,7 @@
  */
 
 import React from "react";
-import { Play, Shield, Key, Scroll, HelpCircle, Heart, EyeOff, MapPin } from "lucide-react";
+import { Play, Shield, Key, Scroll, HelpCircle, Heart, EyeOff, MapPin, Skull, Eye, Flame, Droplets, Volume2 } from "lucide-react";
 import { playMenuClickSound } from "../utils";
 
 interface IntroProps {
@@ -36,7 +36,7 @@ export function Intro({ onProceed }: IntroProps) {
       </header>
 
       {/* Main Lore & Guide Cards */}
-      <main className="z-10 max-w-4xl mx-auto w-full my-8 grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
+      <main className="z-10 max-w-6xl mx-auto w-full my-8 grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
         
         {/* Lore Card */}
         <div className="flex flex-col justify-between p-6 rounded-2xl border border-slate-800 bg-slate-900/40 backdrop-blur-sm shadow-xl hover:border-slate-700 transition-all duration-300">
@@ -65,6 +65,79 @@ export function Intro({ onProceed }: IntroProps) {
             <span className="text-[11px] text-slate-400 leading-snug">
               Spawn points are restricted exclusively to safe classroom quadrants on Floor 5. Once eliminated, you will always be returned to a safe classroom start on Floor 5.
             </span>
+          </div>
+        </div>
+
+        {/* Tobby Threat Intel Card */}
+        <div className="flex flex-col justify-between p-6 rounded-2xl border border-red-950/60 bg-red-950/10 backdrop-blur-sm shadow-xl hover:border-red-900/60 transition-all duration-300 relative group overflow-hidden">
+          {/* Ambient threat highlight */}
+          <div className="absolute inset-0 bg-red-950/5 group-hover:bg-red-950/10 pointer-events-none transition-colors duration-300" />
+          
+          <div>
+            <div className="flex items-center gap-2 text-rose-550 font-mono text-xs font-bold uppercase tracking-wider mb-4 border-b border-red-950/30 pb-2">
+              <Skull size={14} className="text-red-500 animate-pulse" /> Threat Intel: Tobby Clones
+            </div>
+            <h2 className="text-xl font-bold font-mono text-red-200 mb-3 tracking-wide">
+              Tobby's Threat Skills
+            </h2>
+            <p className="text-xs text-slate-300 mb-4 font-sans leading-relaxed">
+              Each duplicate utilizes anomalous biological defenses. Make sure you memorize their capabilities to prevent accidental execution:
+            </p>
+
+            <div className="space-y-4 text-xs font-mono">
+              <div className="flex items-start gap-2.5">
+                <div className="p-1 rounded bg-red-950 text-red-400 mt-0.5 border border-red-900/40">
+                  <Eye size={12} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-red-200 uppercase text-[11px]">Dynamic Searchlight Gaze</h4>
+                  <p className="text-slate-400 leading-relaxed text-[10px] pt-0.5">
+                    Projects a yellow visual cone in front of them. Catching the player in their line-of-sight triggers instant chase aggressive mode.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5">
+                <div className="p-1 rounded bg-red-950 text-red-400 mt-0.5 border border-red-900/40">
+                  <Droplets size={12} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-red-200 uppercase text-[11px]">Water Spill Slime Puddles</h4>
+                  <p className="text-slate-400 leading-relaxed text-[10px] pt-0.5">
+                    Spills slick fluid pools. Stepping on or traversing through the water inflicts a massive <strong className="text-amber-400">50% movement slow penalty</strong>.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5">
+                <div className="p-1 rounded bg-red-950 text-red-400 mt-0.5 border border-red-900/40">
+                  <Flame size={12} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-red-200 uppercase text-[11px]">Corrosive Claws (Scratch DoT)</h4>
+                  <p className="text-slate-400 leading-relaxed text-[10px] pt-0.5">
+                    Wounds you on proximity. Bleeding wounds apply a <strong className="text-red-400">continuous Damage-over-Time (DoT) tick</strong> for 5 entire seconds.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5">
+                <div className="p-1 rounded bg-red-950 text-red-400 mt-0.5 border border-red-900/40">
+                  <Volume2 size={12} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-red-200 uppercase text-[11px]">Scary Sound Waves Shriek</h4>
+                  <p className="text-slate-400 leading-relaxed text-[10px] pt-0.5">
+                    Emits high-frequency radial waves when aggressive, causing high-impact concussive blast damage to anyone nearby inside rooms.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 p-2 bg-red-950/20 border border-red-900/30 rounded-lg text-[10px] text-red-400 flex items-center justify-between">
+            <span className="font-bold">DANGER SCALE:</span>
+            <span className="text-red-500 font-extrabold tracking-widest uppercaseScale">★★★★★ MAX THREAT</span>
           </div>
         </div>
 
@@ -134,7 +207,7 @@ export function Intro({ onProceed }: IntroProps) {
       </main>
 
       {/* Navigation Controls */}
-      <footer className="z-10 max-w-4xl mx-auto w-full flex justify-center items-center py-4">
+      <footer className="z-10 max-w-6xl mx-auto w-full flex justify-center items-center py-4">
         <button
           onClick={handleProceedWithSound}
           id="btn-goto-characters"
