@@ -63,6 +63,7 @@ export interface TobbyState {
   // Visual offsets for creepy wiggling
   wiggleOffset: number;
   isHallwaySpecial?: boolean;
+  isStationary?: boolean;
 }
 
 export interface PuddleState {

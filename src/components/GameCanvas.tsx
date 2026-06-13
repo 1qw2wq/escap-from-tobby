@@ -93,6 +93,7 @@ export function GameCanvas({
   const spawnCoordsRef = useRef<{ x: number; y: number }>({ x: 625, y: 95 });
   const mouseTargetRef = useRef<{ x: number; y: number } | null>(null);
   const isMouseDownRef = useRef<boolean>(false);
+  const puddleDamageTimerRef = useRef<number>(0);
 
   // Load vector layout textures inside cache
   const imagesCachedRef = useRef<{
@@ -201,27 +202,33 @@ export function GameCanvas({
     }
 
     if (!hasPersistedData) {
-      // Choose 6 distinct random rooms amongst classrooms (C1-C5), Office1, Office2, Toilets, Hallway
-      const potentialRooms = ["C1", "C2", "C3", "C4", "C5", "Office1", "Office2", "Toilets", "Hallway"];
-      const shuffledRooms = [...potentialRooms].sort(() => Math.random() - 0.5);
-      const selectedRooms = shuffledRooms.slice(0, 6);
+      const spawnRooms = ["C1", "C2", "C3", "C4", "C5", "Office1", "Office2", "Toilets", "Hallway"];
+      
+      // Determine a balanced, localized survival threat level: 5 to 7 Tobbys per floor.
+      const totalTobbys = 5 + Math.floor(Math.random() * 3); // random selection of 5, 6 or 7 Tobbys
+      const assignedRooms: string[] = [];
+      for (let i = 0; i < totalTobbys; i++) {
+        // Select random room evenly from potential spawn quadrants
+        assignedRooms.push(spawnRooms[Math.floor(Math.random() * spawnRooms.length)]);
+      }
 
       const tobbys: TobbyState[] = [];
       let tobbyId = 1;
 
-      for (const roomId of selectedRooms) {
+      for (let i = 0; i < totalTobbys; i++) {
+        const roomId = assignedRooms[i];
         const room = ROOMS.find((r) => r.id === roomId);
         if (!room) continue;
 
         let tx = room.minX + room.maxX / 2;
         let ty = room.minY + room.maxY / 2;
         let attempts = 0;
-        while (attempts < 100) {
+        while (attempts < 150) {
           tx = room.minX + 25 + Math.random() * (room.maxX - room.minX - 50);
           ty = room.minY + 25 + Math.random() * (room.maxY - room.minY - 50);
 
           if (isLocationWalkable(tx, ty, 10)) {
-            // Keep clear of the player starting zone (Dynamic/Randomized coordinates)
+            // Keep clear of the player starting zone
             const distToSpawn = Math.sqrt((tx - p.x) ** 2 + (ty - p.y) ** 2);
             if (distToSpawn > 120) {
               break;
@@ -230,46 +237,8 @@ export function GameCanvas({
           attempts++;
         }
 
-        tobbys.push({
-          id: tobbyId++,
-          x: tx,
-          y: ty,
-          angle: Math.random() * Math.PI * 2,
-          aiState: AIState.IDLE, // Default still state
-          patrolTargetX: tx,
-          patrolTargetY: ty,
-          speed: 30 + Math.random() * 10,
-          stareTimer: 0,
-          hp: 6, // 6 health points (needs 3 hits from player contact of 2 damage to die)
-          maxHp: 6,
-          playerHitCooldown: 0,
-          flashTime: 0,
-          hitCooldown: 0,
-          scratchCooldown: 0,
-          waterSpillCooldown: 0,
-          stareCooldown: 0,
-          scarySoundCooldown: 0,
-          wiggleOffset: Math.random() * Math.PI * 2,
-        });
-      }
-
-      // Add 4 more Tobby enemies walking around randomly in the hallway/corridor
-      for (let i = 0; i < 4; i++) {
-        let tx = 380 + 15 + Math.random() * (510 - 380 - 30);
-        let ty = 80 + Math.random() * (850 - 80);
-        let attempts = 0;
-        while (attempts < 100) {
-          tx = 380 + 15 + Math.random() * (510 - 380 - 30);
-          ty = 80 + Math.random() * (850 - 80);
-          if (isLocationWalkable(tx, ty, 10)) {
-            const distToSpawn = Math.sqrt((tx - p.x) ** 2 + (ty - p.y) ** 2);
-            if (distToSpawn > 120) {
-              break;
-            }
-          }
-          attempts++;
-        }
-
+        const isHallway = roomId === "Hallway";
+        const isStationary = !isHallway && (i % 3 === 0); // ~33% of indoor Tobbys remain stationary
         tobbys.push({
           id: tobbyId++,
           x: tx,
@@ -278,7 +247,7 @@ export function GameCanvas({
           aiState: AIState.IDLE,
           patrolTargetX: tx,
           patrolTargetY: ty,
-          speed: 33 + Math.random() * 8, // slight swifter speed in hallway
+          speed: isHallway ? 33 + Math.random() * 8 : 30 + Math.random() * 10,
           stareTimer: 0,
           hp: 6,
           maxHp: 6,
@@ -290,7 +259,8 @@ export function GameCanvas({
           stareCooldown: 0,
           scarySoundCooldown: 0,
           wiggleOffset: Math.random() * Math.PI * 2,
-          isHallwaySpecial: true,
+          isHallwaySpecial: isHallway,
+          isStationary,
         });
       }
 
@@ -769,12 +739,13 @@ export function GameCanvas({
 
     // Puddle continuous damage logic (1 HP damage per second standing inside)
     if (inPuddle) {
-      if (!p.scratchDotTimer || p.scratchDotTimer > 2) p.scratchDotTimer = 0;
-      p.scratchDotTimer += dt;
-      if (p.scratchDotTimer >= 1.5) {
-        p.scratchDotTimer = 0;
-        damagePlayer(1, true);
+      puddleDamageTimerRef.current += dt;
+      if (puddleDamageTimerRef.current >= 1.0) {
+        puddleDamageTimerRef.current = 0;
+        damagePlayer(1, true); // continuous custom environmental tick
       }
+    } else {
+      puddleDamageTimerRef.current = 0;
     }
 
     // --- E. UPDATE TOBBY CLONES AI STATE MACHINE ---
@@ -827,7 +798,7 @@ export function GameCanvas({
         }
 
         // Scratch dot
-        if (dist <= 21) {
+        if (dist <= 20) {
           if (t.scratchCooldown <= 0) {
             p.scratchDotDuration = 3.0;
             p.scratchDotTimer = 0;
@@ -837,10 +808,10 @@ export function GameCanvas({
         }
 
         // Water spill cone attack
-        if (dist <= 35 && t.waterSpillCooldown <= 0) {
+        if (dist <= 30 && t.waterSpillCooldown <= 0) {
           const angleToPlayer = Math.atan2(p.y - t.y, p.x - t.x);
           const angleDiff = Math.abs(normalizeAngle(t.angle - angleToPlayer));
-          const fovHalf = (40 * Math.PI) / 180;
+          const fovHalf = (40 * Math.PI) / 180; // 80 deg front cone
 
           if (angleDiff <= fovHalf) {
             damagePlayer(5);
@@ -857,10 +828,10 @@ export function GameCanvas({
         }
 
         // Stare cone beam attack
-        if (dist <= 60 && t.stareCooldown <= 0) {
+        if (dist <= 50 && t.stareCooldown <= 0) {
           const angleToPlayer = Math.atan2(p.y - t.y, p.x - t.x);
           const angleDiff = Math.abs(normalizeAngle(t.angle - angleToPlayer));
-          const stareFovHalf = (15 * Math.PI) / 180;
+          const stareFovHalf = (15 * Math.PI) / 180; // 30 deg cone
 
           if (angleDiff <= stareFovHalf) {
             t.stareTimer += dt;
@@ -891,58 +862,63 @@ export function GameCanvas({
           if (!muted) playSoundWaveAttack();
         }
       } else {
-        // No Line of Sight! Move towards patrol target (patrol/wander randomly)
+        // No Line of Sight! Move towards patrol target (patrol/wander randomly) or stand still if stationary sentry
         t.stareTimer = 0;
         t.aiState = AIState.IDLE;
 
-        // If we don't have a patrol target or have reached it, pick a new one!
-        const distToPatrol = Math.sqrt((t.patrolTargetX - t.x) ** 2 + (t.patrolTargetY - t.y) ** 2);
-        if (distToPatrol < 15 || !t.patrolTargetX || !t.patrolTargetY) {
-          let foundTarget = false;
-          let attempts = 0;
-          while (attempts < 50 && !foundTarget) {
-            let tx = 0;
-            let ty = 0;
-            if (t.isHallwaySpecial) {
-              // Pick a coordinate inside the Corridor Hallway
-              // Hallway limits: minX: 380, maxX: 510, minY: 40, maxY: 895
-              tx = 380 + 15 + Math.random() * (510 - 380 - 30);
-              ty = 40 + 20 + Math.random() * (895 - 40 - 40);
-            } else {
-              // Pick a coordinate in a random room
-              const room = ROOMS[Math.floor(Math.random() * ROOMS.length)];
-              tx = room.minX + 15 + Math.random() * (room.maxX - room.minX - 30);
-              ty = room.minY + 15 + Math.random() * (room.maxY - room.minY - 30);
+        if (t.isStationary) {
+          // Stationary Sentries stand completely still scanning. They slowly rotate head left and right like security cameras
+          t.angle += Math.sin(t.wiggleOffset * 0.04) * 0.008;
+        } else {
+          // If we don't have a patrol target or have reached it, pick a new one!
+          const distToPatrol = Math.sqrt((t.patrolTargetX - t.x) ** 2 + (t.patrolTargetY - t.y) ** 2);
+          if (distToPatrol < 15 || !t.patrolTargetX || !t.patrolTargetY) {
+            let foundTarget = false;
+            let attempts = 0;
+            while (attempts < 50 && !foundTarget) {
+              let tx = 0;
+              let ty = 0;
+              if (t.isHallwaySpecial) {
+                // Pick a coordinate inside the Corridor Hallway
+                // Hallway limits: minX: 380, maxX: 510, minY: 40, maxY: 895
+                tx = 380 + 15 + Math.random() * (510 - 380 - 30);
+                ty = 40 + 20 + Math.random() * (895 - 40 - 40);
+              } else {
+                // Pick a coordinate in a random room
+                const room = ROOMS[Math.floor(Math.random() * ROOMS.length)];
+                tx = room.minX + 15 + Math.random() * (room.maxX - room.minX - 30);
+                ty = room.minY + 15 + Math.random() * (room.maxY - room.minY - 30);
+              }
+              if (isLocationWalkable(tx, ty, 10)) {
+                t.patrolTargetX = tx;
+                t.patrolTargetY = ty;
+                foundTarget = true;
+              }
+              attempts++;
             }
-            if (isLocationWalkable(tx, ty, 10)) {
-              t.patrolTargetX = tx;
-              t.patrolTargetY = ty;
-              foundTarget = true;
-            }
-            attempts++;
           }
-        }
 
-        // Steer towards the patrol target
-        if (t.patrolTargetX && t.patrolTargetY) {
-          const dx = t.patrolTargetX - t.x;
-          const dy = t.patrolTargetY - t.y;
-          const targetAngle = Math.atan2(dy, dx);
-          
-          t.angle = targetAngle;
+          // Steer towards the patrol target
+          if (t.patrolTargetX && t.patrolTargetY) {
+            const dx = t.patrolTargetX - t.x;
+            const dy = t.patrolTargetY - t.y;
+            const targetAngle = Math.atan2(dy, dx);
+            
+            t.angle = targetAngle;
 
-          // Walk speed during patrol is slower than chasing speed
-          const patrolSpeed = t.speed ? t.speed * 0.75 : 24;
-          const stepX = Math.cos(t.angle) * patrolSpeed * dt;
-          const stepY = Math.sin(t.angle) * patrolSpeed * dt;
+            // Walk speed during patrol is slower than chasing speed
+            const patrolSpeed = t.speed ? t.speed * 0.75 : 24;
+            const stepX = Math.cos(t.angle) * patrolSpeed * dt;
+            const stepY = Math.sin(t.angle) * patrolSpeed * dt;
 
-          if (isLocationWalkable(t.x + stepX, t.y + stepY, 10)) {
-            t.x += stepX;
-            t.y += stepY;
-          } else {
-            // If they hit a collision block, clear the target to force choosing a new one
-            t.patrolTargetX = 0;
-            t.patrolTargetY = 0;
+            if (isLocationWalkable(t.x + stepX, t.y + stepY, 10)) {
+              t.x += stepX;
+              t.y += stepY;
+            } else {
+              // If they hit a collision block, clear the target to force choosing a new one
+              t.patrolTargetX = 0;
+              t.patrolTargetY = 0;
+            }
           }
         }
       }

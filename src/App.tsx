@@ -159,19 +159,19 @@ export default function App() {
       )}
 
       {screen === "GAMEOVER" && (
-        <div id="game-over-screen" className="flex-1 flex flex-col justify-center items-center max-w-lg mx-auto p-6 md:p-10 font-mono text-center">
+        <div id="game-over-screen" className="flex-1 flex flex-col justify-center items-center max-w-2xl mx-auto p-6 md:p-10 font-mono text-center">
           <div className="p-4 rounded-full bg-red-950/40 border border-red-600/35 mb-6 text-red-500 animate-bounce">
             <Skull size={48} />
           </div>
 
-          <h2 className="text-3xl font-extrabold tracking-widest text-red-600 mb-2">
+          <h2 className="text-3xl font-extrabold tracking-widest text-red-600 mb-2 animate-pulse">
             STUDENT TERMINATED
           </h2>
           <p className="text-xs text-slate-500 uppercase tracking-widest mb-6">
             Failed to Escape from Tobby
           </p>
 
-          <div className="w-full bg-slate-900/40 border border-slate-900 rounded-xl p-4 mb-8 text-left space-y-3.5">
+          <div className="w-full bg-slate-900/40 border border-slate-900 rounded-xl p-4 mb-6 text-left space-y-3.5">
             <div>
               <span className="text-[10px] text-slate-500 block uppercase">LAST SEEN LOCATION:</span>
               <span className="text-xs text-slate-300 font-bold">FLOOR LEVEL {currentFloor} • school floor</span>
@@ -181,6 +181,52 @@ export default function App() {
               <span className="text-xs text-red-400 leading-relaxed font-semibold block pt-0.5">
                 {deathReason}
               </span>
+            </div>
+          </div>
+
+          {/* Tobby Threat Intel Subpanel inside failed page */}
+          <div className="w-full border border-red-950/50 bg-red-950/5 rounded-xl p-5 text-left mb-8">
+            <h3 className="text-xs font-bold uppercase text-red-400 mb-3 border-b border-red-950/30 pb-2 flex items-center gap-1.5">
+              <Skull size={12} /> Post-Mortem Threat Assessment
+            </h3>
+            <p className="text-[10px] text-slate-400 mb-4 leading-relaxed">
+              Tobby clones utilized these specific combat parameters to defeat you. Review and memorize their triggers:
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px] leading-relaxed">
+              <div className="bg-slate-950/40 border border-red-950/20 p-2.5 rounded-lg">
+                <div className="font-bold text-red-200">1. WATER SPILL SLIME</div>
+                <div className="text-slate-400 text-[10px] mt-0.5">
+                  Triggers within <strong className="text-red-400">30px (0.6m)</strong> inside an <strong className="text-red-400">80° cone</strong>. Spills a 10-second puddle dealing <strong className="text-red-400">1 Damage / sec</strong> and a <strong className="text-amber-400">50% slowing factor</strong>.
+                </div>
+              </div>
+              <div className="bg-slate-950/40 border border-red-950/20 p-2.5 rounded-lg">
+                <div className="font-bold text-red-200">2. SEARCHLIGHT STARE</div>
+                <div className="text-slate-400 text-[10px] mt-0.5">
+                  Continuous tracking within <strong className="text-red-400">50px (1.0m)</strong> inside a <strong className="text-red-400">30° cone</strong>. Triggers <strong className="text-red-400">1 Damage</strong> only if you are stared at for <strong className="text-red-400">&gt; 5 seconds</strong> continuously.
+                </div>
+              </div>
+              <div className="bg-slate-950/40 border border-red-950/20 p-2.5 rounded-lg">
+                <div className="font-bold text-red-200">3. SCARY SOUND BLAST</div>
+                <div className="text-slate-400 text-[10px] mt-0.5">
+                  High-frequency shriek within a <strong className="text-red-400">150px (3.0m)</strong> radial area (360° AoE). Deals <strong className="text-red-400">2 Damage</strong> with a 15-second cooldown.
+                </div>
+              </div>
+              <div className="bg-slate-950/40 border border-red-950/20 p-2.5 rounded-lg">
+                <div className="font-bold text-red-200">4. DIRECT COLLISION MELEE</div>
+                <div className="text-slate-400 text-[10px] mt-0.5">
+                  Physical physical collision. Deals <strong className="text-red-400">2 direct damage</strong> on contact (5-second cooldown).
+                </div>
+              </div>
+              <div className="bg-slate-950/40 border border-red-950/20 p-2.5 rounded-lg md:col-span-2">
+                <div className="font-bold text-red-200">5. CORROSIVE CLAWS (SCRATCH DoT)</div>
+                <div className="text-slate-400 text-[10px] mt-0.5">
+                  Direct claws scratch on collision. Inflicts continuous bleeding wounds of <strong className="text-red-400">1 Damage / sec over 3 whole seconds</strong>.
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 text-[9px] text-rose-550 border-t border-red-950/30 pt-2 flex justify-between">
+              <span>ACTIVE CLONES PER FLOOR: 5 - 7 SPECIMENS</span>
+              <span className="font-bold uppercase">Tactical Advice: Keep moving!</span>
             </div>
           </div>
 
