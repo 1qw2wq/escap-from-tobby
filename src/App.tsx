@@ -11,7 +11,7 @@ import { Intro } from "./components/Intro";
 import { Skull, Trophy, HelpCircle, Footprints, AlertTriangle, ChevronRight, RefreshCw, LogIn, LogOut, Flame } from "lucide-react";
 import { playMenuClickSound, playStaircasePassSound, playGameOverSound, playLevelWinSound } from "./utils";
 
-type GameScreen = "INTRO" | "MENU" | "PLAYING" | "DESCENDING" | "GAMEOVER" | "WIN";
+type GameScreen = "INTRO" | "MENU" | "PLAYING" | "DESCENDING" | "ASCENDING" | "GAMEOVER" | "WIN";
 
 export default function App() {
   const [screen, setScreen] = useState<GameScreen>("INTRO");
@@ -36,6 +36,14 @@ export default function App() {
     } else {
       playLevelWinSound();
       setScreen("WIN");
+    }
+  };
+
+  const handleFloorAscend = () => {
+    if (currentFloor < 5) {
+      setCurrentFloor((prev) => prev + 1);
+      playStaircasePassSound();
+      setScreen("ASCENDING");
     }
   };
 
@@ -84,6 +92,7 @@ export default function App() {
             characterClass={selectedClass}
             currentFloor={currentFloor}
             onFloorComplete={handleFloorComplete}
+            onFloorAscend={handleFloorAscend}
             onGameOver={handleGameOver}
             onQuit={handleQuit}
             onResetFloor5={() => setCurrentFloor(5)}
@@ -105,8 +114,8 @@ export default function App() {
           </p>
 
           <p className="text-slate-300 text-sm leading-relaxed mb-8 border-y border-slate-900 py-6">
-            You successfully navigated the dark concrete stairs downwards. You are now stepping onto <strong className="text-rose-400">Floor Level {currentFloor}</strong>. 
-            The building grows colder as you go deeper, and the echoes of Tobby\'s footsteps are amplifying. Prepare your defenses!
+            You successfully navigated the dark concrete stairs downwards. You are now stepping onto <strong className="text-rose-450">Floor Level {currentFloor}</strong>. 
+            The building grows colder as you go deeper, and the echoes of Tobby's footsteps are amplifying. Prepare your defenses!
           </p>
 
           <button
@@ -115,6 +124,35 @@ export default function App() {
             className="w-full px-8 py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold tracking-widest text-sm flex items-center justify-center gap-2 group transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)] transform active:scale-95"
           >
             <span>DESCEND FURTHER DOWN</span>
+            <ChevronRight size={16} className="transform group-hover:translate-x-1 transition-transform" />
+          </button>
+        </div>
+      )}
+
+      {screen === "ASCENDING" && (
+        <div id="ascend-transition-screen" className="flex-1 flex flex-col justify-center items-center max-w-lg mx-auto p-6 md:p-10 font-mono text-center">
+          <div className="p-4 rounded-full bg-cyan-950/40 border border-cyan-500/35 mb-6 text-cyan-400 animate-pulse">
+            <Footprints size={48} className="transform -rotate-180" />
+          </div>
+
+          <h2 className="text-3xl font-extrabold tracking-widest text-cyan-400 mb-2">
+            RETURNING TO UPPER FLOOR
+          </h2>
+          <p className="text-xs text-slate-500 uppercase tracking-widest mb-6">
+            Climbing emergency evacuation stairwell backwards
+          </p>
+
+          <p className="text-slate-300 text-sm leading-relaxed mb-8 border-y border-slate-900 py-6">
+            You pushed open the steel door and climbed back up the concrete stairs to <strong className="text-rose-400">Floor Level {currentFloor}</strong>. 
+            All Tobbys on this floor are exactly as you left them. Backtrack with extreme caution!
+          </p>
+
+          <button
+            onClick={handleDescendStart}
+            id="btn-confirm-ascend"
+            className="w-full px-8 py-3.5 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 text-white font-bold tracking-widest text-sm flex items-center justify-center gap-2 group transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] transform active:scale-95"
+          >
+            <span>ENTER UPPER LEVEL</span>
             <ChevronRight size={16} className="transform group-hover:translate-x-1 transition-transform" />
           </button>
         </div>

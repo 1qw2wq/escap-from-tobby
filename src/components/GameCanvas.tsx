@@ -13,6 +13,7 @@ interface GameCanvasProps {
   characterClass: CharacterClass;
   currentFloor: number;
   onFloorComplete: () => void;
+  onFloorAscend: () => void;
   onGameOver: () => void;
   onQuit: () => void;
   onResetFloor5: () => void;
@@ -22,6 +23,7 @@ export function GameCanvas({
   characterClass,
   currentFloor,
   onFloorComplete,
+  onFloorAscend,
   onGameOver,
   onQuit,
   onResetFloor5,
@@ -75,6 +77,15 @@ export function GameCanvas({
   const soundWavesRef = useRef<SoundWaveState[]>([]);
   const medicinesRef = useRef<MedicineItemState[]>([]);
   const freshGameRef = useRef<boolean>(true);
+  const previousFloorRef = useRef<number>(-1);
+  const staircaseCooldownRef = useRef<number>(0);
+  const floorDataRef = useRef<{
+    [floorNum: number]: {
+      tobbys: TobbyState[];
+      medicines: MedicineItemState[];
+      puddles: PuddleState[];
+    };
+  }>({});
   const footstepTimerRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
   const animationFrameIdRef = useRef<number | null>(null);
@@ -91,28 +102,48 @@ export function GameCanvas({
   } | null>(null);
 
   const initializeLevel = () => {
+    // Save outgoing floor's state before switching!
+    if (previousFloorRef.current !== -1 && previousFloorRef.current !== currentFloor) {
+      floorDataRef.current[previousFloorRef.current] = {
+        tobbys: [...tobbysRef.current],
+        medicines: [...medicinesRef.current],
+        puddles: [...puddlesRef.current],
+      };
+    }
+
     // Determine player specs
     const p = playerRef.current;
     
     let px = 625; // Default Staircase A (Top-Right)
     let py = 95;
 
-    // Player spawns only inside classroom units on floor 5
-    if (currentFloor === 5) {
-      let attempts = 0;
-      let found = false;
-      const validRooms = ROOMS.filter(r => ["C1", "C2", "C3", "C4", "C5"].includes(r.id));
-      while (attempts < 200 && !found) {
-        const room = validRooms[Math.floor(Math.random() * validRooms.length)];
-        const rx = room.minX + 25 + Math.random() * (room.maxX - room.minX - 50);
-        const ry = room.minY + 25 + Math.random() * (room.maxY - room.minY - 50);
-        if (isLocationWalkable(rx, ry, 14)) {
-          px = rx;
-          py = ry;
-          found = true;
+    // Player spawns inside classrooms on floor 5 at start of game;
+    // otherwise based on transition direction.
+    if (previousFloorRef.current === -1) {
+      if (currentFloor === 5) {
+        let attempts = 0;
+        let found = false;
+        const validRooms = ROOMS.filter(r => ["C1", "C2", "C3", "C4", "C5"].includes(r.id));
+        while (attempts < 200 && !found) {
+          const room = validRooms[Math.floor(Math.random() * validRooms.length)];
+          const rx = room.minX + 25 + Math.random() * (room.maxX - room.minX - 50);
+          const ry = room.minY + 25 + Math.random() * (room.maxY - room.minY - 50);
+          if (isLocationWalkable(rx, ry, 14)) {
+            px = rx;
+            py = ry;
+            found = true;
+          }
+          attempts++;
         }
-        attempts++;
       }
+    } else if (currentFloor > previousFloorRef.current) {
+      // Transitioned UP! Spawn at Staircase B (Y ~ 650)
+      px = 625;
+      py = 650;
+    } else {
+      // Transitioned DOWN! Spawn at Staircase A (Y ~ 95)
+      px = 625;
+      py = 95;
     }
 
     p.x = px;
@@ -138,155 +169,174 @@ export function GameCanvas({
     p.scratchDotDuration = 0;
     invincibilityTimeRef.current = 0;
 
+    // Reset staircase cooldown to prevent immediate staircase loop triggering
+    staircaseCooldownRef.current = 4.0;
+
     // Persist or initialize lives across floors
     if (freshGameRef.current) {
       p.lives = 3;
       p.maxLives = 3;
       setPlayerLives(3);
       freshGameRef.current = false;
+      floorDataRef.current = {};
+      previousFloorRef.current = -1;
     } else {
       setPlayerLives(p.lives);
     }
 
-    // Reset board effects
+    // Reset board effects and restore / generate states
     puddlesRef.current = [];
     soundWavesRef.current = [];
 
-    // Choose 6 distinct random rooms amongst classrooms (C1-C5), Office1, Office2, Toilets, Hallway
-    const potentialRooms = ["C1", "C2", "C3", "C4", "C5", "Office1", "Office2", "Toilets", "Hallway"];
-    const shuffledRooms = [...potentialRooms].sort(() => Math.random() - 0.5);
-    const selectedRooms = shuffledRooms.slice(0, 6);
-
-    const tobbys: TobbyState[] = [];
-    let tobbyId = 1;
-
-    for (const roomId of selectedRooms) {
-      const room = ROOMS.find((r) => r.id === roomId);
-      if (!room) continue;
-
-      let tx = room.minX + room.maxX / 2;
-      let ty = room.minY + room.maxY / 2;
-      let attempts = 0;
-      while (attempts < 100) {
-        tx = room.minX + 25 + Math.random() * (room.maxX - room.minX - 50);
-        ty = room.minY + 25 + Math.random() * (room.maxY - room.minY - 50);
-
-        if (isLocationWalkable(tx, ty, 10)) {
-          // Keep clear of the player starting zone (Dynamic/Randomized coordinates)
-          const distToSpawn = Math.sqrt((tx - p.x) ** 2 + (ty - p.y) ** 2);
-          if (distToSpawn > 120) {
-            break;
-          }
-        }
-        attempts++;
-      }
-
-      tobbys.push({
-        id: tobbyId++,
-        x: tx,
-        y: ty,
-        angle: Math.random() * Math.PI * 2,
-        aiState: AIState.IDLE, // Default still state
-        patrolTargetX: tx,
-        patrolTargetY: ty,
-        speed: 30 + Math.random() * 10,
-        stareTimer: 0,
-        hp: 6, // 6 health points (needs 3 hits from player contact of 2 damage to die)
-        maxHp: 6,
-        playerHitCooldown: 0,
-        flashTime: 0,
-        hitCooldown: 0,
-        scratchCooldown: 0,
-        waterSpillCooldown: 0,
-        stareCooldown: 0,
-        scarySoundCooldown: 0,
-        wiggleOffset: Math.random() * Math.PI * 2,
-      });
+    let hasPersistedData = false;
+    if (floorDataRef.current[currentFloor]) {
+      hasPersistedData = true;
+      const preserved = floorDataRef.current[currentFloor];
+      tobbysRef.current = preserved.tobbys;
+      setTobbyCount(preserved.tobbys.length);
+      medicinesRef.current = preserved.medicines;
+      puddlesRef.current = preserved.puddles;
     }
 
-    // Add 4 more Tobby enemies walking around randomly in the hallway/corridor
-    for (let i = 0; i < 4; i++) {
-      let tx = 380 + 15 + Math.random() * (510 - 380 - 30);
-      let ty = 80 + Math.random() * (850 - 80);
-      let attempts = 0;
-      while (attempts < 100) {
-        tx = 380 + 15 + Math.random() * (510 - 380 - 30);
-        ty = 80 + Math.random() * (850 - 80);
-        if (isLocationWalkable(tx, ty, 10)) {
-          const distToSpawn = Math.sqrt((tx - p.x) ** 2 + (ty - p.y) ** 2);
-          if (distToSpawn > 120) {
-            break;
-          }
-        }
-        attempts++;
-      }
+    if (!hasPersistedData) {
+      // Choose 6 distinct random rooms amongst classrooms (C1-C5), Office1, Office2, Toilets, Hallway
+      const potentialRooms = ["C1", "C2", "C3", "C4", "C5", "Office1", "Office2", "Toilets", "Hallway"];
+      const shuffledRooms = [...potentialRooms].sort(() => Math.random() - 0.5);
+      const selectedRooms = shuffledRooms.slice(0, 6);
 
-      tobbys.push({
-        id: tobbyId++,
-        x: tx,
-        y: ty,
-        angle: Math.random() * Math.PI * 2,
-        aiState: AIState.IDLE,
-        patrolTargetX: tx,
-        patrolTargetY: ty,
-        speed: 33 + Math.random() * 8, // slight swifter speed in hallway
-        stareTimer: 0,
-        hp: 6,
-        maxHp: 6,
-        playerHitCooldown: 0,
-        flashTime: 0,
-        hitCooldown: 0,
-        scratchCooldown: 0,
-        waterSpillCooldown: 0,
-        stareCooldown: 0,
-        scarySoundCooldown: 0,
-        wiggleOffset: Math.random() * Math.PI * 2,
-        isHallwaySpecial: true,
-      });
-    }
+      const tobbys: TobbyState[] = [];
+      let tobbyId = 1;
 
-    tobbysRef.current = tobbys;
-    setTobbyCount(tobbys.length);
+      for (const roomId of selectedRooms) {
+        const room = ROOMS.find((r) => r.id === roomId);
+        if (!room) continue;
 
-    // Spawn medicine items in classrooms and other rooms!
-    const medicines: MedicineItemState[] = [];
-    let medId = 1;
-
-    // Medicine-rich rooms
-    const medicineRooms = ["C1", "C2", "C3", "C4", "C5", "Office1", "Office2", "Toilets"];
-    medicineRooms.forEach((roomId) => {
-      const r = ROOMS.find((room) => room.id === roomId);
-      if (r) {
-        // Spawn 1 medicine in each room
+        let tx = room.minX + room.maxX / 2;
+        let ty = room.minY + room.maxY / 2;
         let attempts = 0;
-        let spawned = false;
-        while (attempts < 150 && !spawned) {
-          const mx = r.minX + 30 + Math.random() * (r.maxX - r.minX - 60);
-          const my = r.minY + 30 + Math.random() * (r.maxY - r.minY - 60);
-          if (isLocationWalkable(mx, my, 12)) {
-            const distToSpawn = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
-            if (distToSpawn > 40) {
-              medicines.push({
-                id: medId++,
-                x: mx,
-                y: my,
-                roomId: roomId,
-                healAmount: 8, // heals 8 HP
-                pickedUp: false,
-              });
-              spawned = true;
+        while (attempts < 100) {
+          tx = room.minX + 25 + Math.random() * (room.maxX - room.minX - 50);
+          ty = room.minY + 25 + Math.random() * (room.maxY - room.minY - 50);
+
+          if (isLocationWalkable(tx, ty, 10)) {
+            // Keep clear of the player starting zone (Dynamic/Randomized coordinates)
+            const distToSpawn = Math.sqrt((tx - p.x) ** 2 + (ty - p.y) ** 2);
+            if (distToSpawn > 120) {
+              break;
             }
           }
           attempts++;
         }
-      }
-    });
 
-    medicinesRef.current = medicines;
+        tobbys.push({
+          id: tobbyId++,
+          x: tx,
+          y: ty,
+          angle: Math.random() * Math.PI * 2,
+          aiState: AIState.IDLE, // Default still state
+          patrolTargetX: tx,
+          patrolTargetY: ty,
+          speed: 30 + Math.random() * 10,
+          stareTimer: 0,
+          hp: 6, // 6 health points (needs 3 hits from player contact of 2 damage to die)
+          maxHp: 6,
+          playerHitCooldown: 0,
+          flashTime: 0,
+          hitCooldown: 0,
+          scratchCooldown: 0,
+          waterSpillCooldown: 0,
+          stareCooldown: 0,
+          scarySoundCooldown: 0,
+          wiggleOffset: Math.random() * Math.PI * 2,
+        });
+      }
+
+      // Add 4 more Tobby enemies walking around randomly in the hallway/corridor
+      for (let i = 0; i < 4; i++) {
+        let tx = 380 + 15 + Math.random() * (510 - 380 - 30);
+        let ty = 80 + Math.random() * (850 - 80);
+        let attempts = 0;
+        while (attempts < 100) {
+          tx = 380 + 15 + Math.random() * (510 - 380 - 30);
+          ty = 80 + Math.random() * (850 - 80);
+          if (isLocationWalkable(tx, ty, 10)) {
+            const distToSpawn = Math.sqrt((tx - p.x) ** 2 + (ty - p.y) ** 2);
+            if (distToSpawn > 120) {
+              break;
+            }
+          }
+          attempts++;
+        }
+
+        tobbys.push({
+          id: tobbyId++,
+          x: tx,
+          y: ty,
+          angle: Math.random() * Math.PI * 2,
+          aiState: AIState.IDLE,
+          patrolTargetX: tx,
+          patrolTargetY: ty,
+          speed: 33 + Math.random() * 8, // slight swifter speed in hallway
+          stareTimer: 0,
+          hp: 6,
+          maxHp: 6,
+          playerHitCooldown: 0,
+          flashTime: 0,
+          hitCooldown: 0,
+          scratchCooldown: 0,
+          waterSpillCooldown: 0,
+          stareCooldown: 0,
+          scarySoundCooldown: 0,
+          wiggleOffset: Math.random() * Math.PI * 2,
+          isHallwaySpecial: true,
+        });
+      }
+
+      tobbysRef.current = tobbys;
+      setTobbyCount(tobbys.length);
+
+      // Spawn medicine items in classrooms and other rooms!
+      const medicines: MedicineItemState[] = [];
+      let medId = 1;
+
+      // Medicine-rich rooms
+      const medicineRooms = ["C1", "C2", "C3", "C4", "C5", "Office1", "Office2", "Toilets"];
+      medicineRooms.forEach((roomId) => {
+        const r = ROOMS.find((room) => room.id === roomId);
+        if (r) {
+          // Spawn 1 medicine in each room
+          let attempts = 0;
+          let spawned = false;
+          while (attempts < 150 && !spawned) {
+            const mx = r.minX + 30 + Math.random() * (r.maxX - r.minX - 60);
+            const my = r.minY + 30 + Math.random() * (r.maxY - r.minY - 60);
+            if (isLocationWalkable(mx, my, 12)) {
+              const distToSpawn = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
+              if (distToSpawn > 40) {
+                medicines.push({
+                  id: medId++,
+                  x: mx,
+                  y: my,
+                  roomId: roomId,
+                  healAmount: 8, // heals 8 HP
+                  pickedUp: false,
+                });
+                spawned = true;
+              }
+            }
+            attempts++;
+          }
+        }
+      });
+
+      medicinesRef.current = medicines;
+    }
 
     // Initial React State bindings
     setPlayerHp(p.hp);
     setPlayerMaxHp(p.maxHp);
+
+    previousFloorRef.current = currentFloor;
   };
 
   // 1. Level Initialization on Mount or Floor Change
@@ -491,6 +541,11 @@ export function GameCanvas({
     if (p.abilityCooldown > 0) {
       p.abilityCooldown -= dt;
       if (p.abilityCooldown < 0) p.abilityCooldown = 0;
+    }
+
+    if (staircaseCooldownRef.current > 0) {
+      staircaseCooldownRef.current -= dt;
+      if (staircaseCooldownRef.current < 0) staircaseCooldownRef.current = 0;
     }
 
     // Decrement active Melee Strike (punch) cooldown
@@ -881,10 +936,17 @@ export function GameCanvas({
       }
     }
 
-    // --- H. STAIRCASE B EXIT GOAL CHECK (DESCENT TRANSITION) ---
-    // If player reaches Staircase B (escape point: X: 540-710, Y: 600-695)
-    if (p.x >= 540 && p.x <= 710 && p.y >= 600 && p.y <= 695) {
-      onFloorComplete();
+    // --- H. STAIR TRANSITION TRIGGER (WITH COOLDOWN SANITY) ---
+    if (staircaseCooldownRef.current <= 0) {
+      // Staircase B (descent hatch): escape point bounds X: 540-710, Y: 600-695
+      if (p.x >= 540 && p.x <= 710 && p.y >= 600 && p.y <= 695) {
+        onFloorComplete();
+      }
+
+      // Staircase A (ascent hatch): return to upper floor, bounds X: 540-710, Y: 40-130 (for Floors 1 to 4)
+      if (currentFloor < 5 && p.x >= 540 && p.x <= 710 && p.y >= 40 && p.y <= 130) {
+        onFloorAscend();
+      }
     }
 
     // --- I. PUSH CORE DATA OUT TO REACT ---
@@ -899,6 +961,10 @@ export function GameCanvas({
     const p = playerRef.current;
     p.lives -= 1;
     setPlayerLives(p.lives);
+
+    // Reset floor persistence systems on failure restart
+    floorDataRef.current = {};
+    previousFloorRef.current = -1;
 
     if (p.lives > 0) {
       // Return to floor 5 inside a classroom
