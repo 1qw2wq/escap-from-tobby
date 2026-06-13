@@ -91,6 +91,8 @@ export function GameCanvas({
   const animationFrameIdRef = useRef<number | null>(null);
   const invincibilityTimeRef = useRef<number>(0);
   const spawnCoordsRef = useRef<{ x: number; y: number }>({ x: 625, y: 95 });
+  const mouseTargetRef = useRef<{ x: number; y: number } | null>(null);
+  const isMouseDownRef = useRef<boolean>(false);
 
   // Load vector layout textures inside cache
   const imagesCachedRef = useRef<{
@@ -399,6 +401,76 @@ export function GameCanvas({
     };
   }, []);
 
+  // 3b. Mouse and Touch pointer control listeners
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const getCanvasCoords = (clientX: number, clientY: number) => {
+      const rect = canvas.getBoundingClientRect();
+      // Translate HTML display coordinates directly into our 900x1000 resolution
+      const x = ((clientX - rect.left) / rect.width) * 900;
+      const y = ((clientY - rect.top) / rect.height) * 1000;
+      return { x, y };
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      isMouseDownRef.current = true;
+      mouseTargetRef.current = getCanvasCoords(e.clientX, e.clientY);
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isMouseDownRef.current) {
+        mouseTargetRef.current = getCanvasCoords(e.clientX, e.clientY);
+      }
+    };
+
+    const handleMouseUpOrLeave = () => {
+      isMouseDownRef.current = false;
+      mouseTargetRef.current = null;
+    };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        isMouseDownRef.current = true;
+        const touch = e.touches[0];
+        mouseTargetRef.current = getCanvasCoords(touch.clientX, touch.clientY);
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (isMouseDownRef.current && e.touches.length > 0) {
+        const touch = e.touches[0];
+        mouseTargetRef.current = getCanvasCoords(touch.clientX, touch.clientY);
+      }
+    };
+
+    const handleTouchEnd = () => {
+      isMouseDownRef.current = false;
+      mouseTargetRef.current = null;
+    };
+
+    canvas.addEventListener("mousedown", handleMouseDown);
+    canvas.addEventListener("mousemove", handleMouseMove);
+    canvas.addEventListener("mouseup", handleMouseUpOrLeave);
+    canvas.addEventListener("mouseleave", handleMouseUpOrLeave);
+
+    canvas.addEventListener("touchstart", handleTouchStart, { passive: true });
+    canvas.addEventListener("touchmove", handleTouchMove, { passive: true });
+    canvas.addEventListener("touchend", handleTouchEnd, { passive: true });
+
+    return () => {
+      canvas.removeEventListener("mousedown", handleMouseDown);
+      canvas.removeEventListener("mousemove", handleMouseMove);
+      canvas.removeEventListener("mouseup", handleMouseUpOrLeave);
+      canvas.removeEventListener("mouseleave", handleMouseUpOrLeave);
+
+      canvas.removeEventListener("touchstart", handleTouchStart);
+      canvas.removeEventListener("touchmove", handleTouchMove);
+      canvas.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, []);
+
   // 4. Trigger Melee Hit Active Skill (Punch/Strike)
   const triggerMeleeStrike = () => {
     const p = playerRef.current;
@@ -568,7 +640,7 @@ export function GameCanvas({
       }
     }
 
-    // --- C. KEY INPUT MOVEMENT PLOT ---
+    // --- C. KEY & MOUSE INPUT MOVEMENT PLOT ---
     let dx = 0;
     let dy = 0;
 
@@ -577,6 +649,18 @@ export function GameCanvas({
     if (keys["s"] || keys["arrowdown"]) dy += 1;
     if (keys["a"] || keys["arrowleft"]) dx -= 1;
     if (keys["d"] || keys["arrowright"]) dx += 1;
+
+    // Use mouse/touch coordinates if no keys are currently held down
+    if (dx === 0 && dy === 0 && mouseTargetRef.current) {
+      const mTarget = mouseTargetRef.current;
+      const tDx = mTarget.x - p.x;
+      const tDy = mTarget.y - p.y;
+      const dist = Math.sqrt(tDx * tDx + tDy * tDy);
+      if (dist > 8) {
+        dx = tDx;
+        dy = tDy;
+      }
+    }
 
     // Determine current speed modifier
     let baseSpeed = characterClass === CharacterClass.RUNNER ? 75 : 50;
@@ -1404,7 +1488,7 @@ export function GameCanvas({
         </div>
 
         <div className="w-full text-center py-1 text-[10px] text-slate-500 max-w-md uppercase">
-          WASD or Arrow Keys for movement • Use Spacebar to deploy ability mechanics.
+          WASD / Arrow Keys or Click & Drag Mouse to move • Spacebar to deploy ability mechanics.
         </div>
       </div>
 
