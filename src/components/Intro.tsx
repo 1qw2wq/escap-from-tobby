@@ -5,12 +5,17 @@
 
 import React from "react";
 import { Play, Shield, Key, Scroll, HelpCircle, Heart, EyeOff, MapPin } from "lucide-react";
+import { playMenuClickSound } from "../utils";
 
 interface IntroProps {
   onProceed: () => void;
 }
 
 export function Intro({ onProceed }: IntroProps) {
+  const handleProceedWithSound = () => {
+    playMenuClickSound();
+    onProceed();
+  };
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-6 md:p-10 font-sans selection:bg-rose-500 selection:text-white relative overflow-hidden">
       {/* Decorative ambient highlights */}
@@ -131,7 +136,7 @@ export function Intro({ onProceed }: IntroProps) {
       {/* Navigation Controls */}
       <footer className="z-10 max-w-4xl mx-auto w-full flex justify-center items-center py-4">
         <button
-          onClick={onProceed}
+          onClick={handleProceedWithSound}
           id="btn-goto-characters"
           className="px-14 py-4 rounded-xl bg-gradient-to-r from-red-650 via-rose-600 to-rose-700 hover:from-red-600 hover:to-rose-600 text-white font-mono font-bold tracking-widest text-lg shadow-[0_0_20px_rgba(244,63,94,0.3)] hover:shadow-[0_0_35px_rgba(244,63,94,0.6)] transition-all duration-300 transform active:scale-95 flex items-center gap-2 group"
         >

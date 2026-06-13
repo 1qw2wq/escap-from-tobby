@@ -6,7 +6,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import { CharacterClass, PlayerState, TobbyState, AIState, PuddleState, SoundWaveState, MedicineItemState } from "../types";
 import { ROOMS, ALL_OBSTACLES, MAP_SVG, TOBBY_SVG, RUNNER_SVG, MARCUS_SVG, FAIBE_SVG } from "../data";
-import { isLocationWalkable, getRoomAt, checkLineOfSight, playScreamSound, playRamSound, playPacifySound, playDamageSound, playSoundWaveAttack } from "../utils";
+import { isLocationWalkable, getRoomAt, checkLineOfSight, playScreamSound, playRamSound, playPacifySound, playDamageSound, playSoundWaveAttack, playFootstepSound, playActiveAbilityRunner, playMedicinePickupSound } from "../utils";
 import { Shield, Sparkles, AlertTriangle, ArrowRight, Home, RefreshCw, Volume2, VolumeX, Eye, Flame, Heart, Zap } from "lucide-react";
 
 interface GameCanvasProps {
@@ -75,6 +75,7 @@ export function GameCanvas({
   const soundWavesRef = useRef<SoundWaveState[]>([]);
   const medicinesRef = useRef<MedicineItemState[]>([]);
   const freshGameRef = useRef<boolean>(true);
+  const footstepTimerRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
   const animationFrameIdRef = useRef<number | null>(null);
   const invincibilityTimeRef = useRef<number>(0);
@@ -117,8 +118,17 @@ export function GameCanvas({
     p.x = px;
     p.y = py;
     spawnCoordsRef.current = { x: px, y: py };
-    p.hp = characterClass === CharacterClass.MARCUS ? 30 : characterClass === CharacterClass.RUNNER ? 20 : 15;
-    p.maxHp = characterClass === CharacterClass.MARCUS ? 30 : characterClass === CharacterClass.RUNNER ? 20 : 15;
+    const defaultMaxHp = characterClass === CharacterClass.MARCUS ? 30 : characterClass === CharacterClass.RUNNER ? 20 : 15;
+    p.maxHp = defaultMaxHp;
+    
+    // The player's blood points (hp) should not refresh when they go down a level!
+    // Initialize to full only on a brand new game, or if current health is 0 or unassigned.
+    if (freshGameRef.current || !p.hp || p.hp <= 0) {
+      p.hp = defaultMaxHp;
+    } else {
+      // Keep existing blood points across level transitions
+      p.hp = Math.min(p.hp, p.maxHp);
+    }
     p.speed = characterClass === CharacterClass.RUNNER ? 75 : 50;
     p.angle = Math.PI / 2; // Facing South
     p.abilityCooldown = 0;
@@ -551,23 +561,7 @@ export function GameCanvas({
 
             // Play healing arpeggio chime tone
             if (!muted) {
-              try {
-                const c = new (window.AudioContext || (window as any).webkitAudioContext)();
-                if (c) {
-                  const osc = c.createOscillator();
-                  const g = c.createGain();
-                  osc.type = "sine";
-                  osc.frequency.setValueAtTime(523.25, c.currentTime); // C5
-                  osc.frequency.setValueAtTime(659.25, c.currentTime + 0.08); // E5
-                  osc.frequency.setValueAtTime(783.99, c.currentTime + 0.16); // G5
-                  g.gain.setValueAtTime(0.06, c.currentTime);
-                  g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.3);
-                  osc.connect(g);
-                  g.connect(c.destination);
-                  osc.start();
-                  osc.stop(c.currentTime + 0.32);
-                }
-              } catch (err) {}
+              playMedicinePickupSound();
             }
           }
         }
@@ -575,6 +569,16 @@ export function GameCanvas({
     }
 
     if (dx !== 0 || dy !== 0) {
+      // Tick footstep walks sound effects
+      footstepTimerRef.current -= dt;
+      if (footstepTimerRef.current <= 0) {
+        const isSprinting = characterClass === CharacterClass.RUNNER || p.isRamming;
+        footstepTimerRef.current = isSprinting ? 0.28 : 0.42;
+        if (!muted) {
+          playFootstepSound(isSprinting);
+        }
+      }
+
       // Normalize to prevent diagonal speed boosting
       const dist = Math.sqrt(dx * dx + dy * dy);
       const moveX = (dx / dist) * currentSpeed * dt;

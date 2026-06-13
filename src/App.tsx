@@ -9,6 +9,7 @@ import { Menu } from "./components/Menu";
 import { GameCanvas } from "./components/GameCanvas";
 import { Intro } from "./components/Intro";
 import { Skull, Trophy, HelpCircle, Footprints, AlertTriangle, ChevronRight, RefreshCw, LogIn, LogOut, Flame } from "lucide-react";
+import { playMenuClickSound, playStaircasePassSound, playGameOverSound, playLevelWinSound } from "./utils";
 
 type GameScreen = "INTRO" | "MENU" | "PLAYING" | "DESCENDING" | "GAMEOVER" | "WIN";
 
@@ -21,6 +22,7 @@ export default function App() {
   const [deathReason, setDeathReason] = useState<string>("Caught by Tobby in the corridor corridors.");
 
   const handleStartGame = (chosenClass: CharacterClass) => {
+    playMenuClickSound();
     setSelectedClass(chosenClass);
     setCurrentFloor(5);
     setScreen("PLAYING");
@@ -29,13 +31,16 @@ export default function App() {
   const handleFloorComplete = () => {
     if (currentFloor > 1) {
       setCurrentFloor((prev) => prev - 1);
+      playStaircasePassSound();
       setScreen("DESCENDING");
     } else {
+      playLevelWinSound();
       setScreen("WIN");
     }
   };
 
   const handleGameOver = () => {
+    playGameOverSound();
     const reasons = [
       "Staged water spill caused lethal hypothermia slipping.",
       "Stared into wire glasses field too long – physical shock.",
@@ -50,10 +55,12 @@ export default function App() {
   };
 
   const handleDescendStart = () => {
+    playMenuClickSound();
     setScreen("PLAYING");
   };
 
   const handleQuit = () => {
+    playMenuClickSound();
     setScreen("MENU");
   };
 

@@ -264,6 +264,171 @@ export function playDamageSound(isPuddle: boolean = false) {
 }
 
 /**
+ * Synthesizes a low subtle walk tick or heavy breathing step
+ */
+export function playFootstepSound(isSprinting: boolean = false) {
+  const ctx = getAudioContext();
+  if (!ctx || ctx.state === "suspended") return;
+
+  try {
+    const osc = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(isSprinting ? 95 : 65, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(5, ctx.currentTime + 0.08);
+
+    gainNode.gain.setValueAtTime(isSprinting ? 0.04 : 0.02, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+
+    osc.connect(gainNode);
+    gainNode.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.09);
+  } catch (e) {}
+}
+
+/**
+ * Synthesizes descending stairs down a floor level
+ */
+export function playStaircasePassSound() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  try {
+    const notes = [220, 261.63, 329.63, 392.00, 523.25]; // descending-like arpeggio or ascending
+    notes.forEach((freq, index) => {
+      const osc = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + index * 0.08);
+      gainNode.gain.setValueAtTime(0.05, ctx.currentTime + index * 0.08);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + index * 0.08 + 0.25);
+      osc.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      osc.start(ctx.currentTime + index * 0.08);
+      osc.stop(ctx.currentTime + index * 0.08 + 0.26);
+    });
+  } catch (e) {}
+}
+
+/**
+ * Synthesizes a game over (defeat) sound effect
+ */
+export function playGameOverSound() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  try {
+    const notes = [220, 196, 174.61, 146.83, 110]; // depressing downward notes
+    notes.forEach((freq, index) => {
+      const osc = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + index * 0.15);
+      gainNode.gain.setValueAtTime(0.06, ctx.currentTime + index * 0.15);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + index * 0.15 + 0.4);
+      osc.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      osc.start(ctx.currentTime + index * 0.15);
+      osc.stop(ctx.currentTime + index * 0.15 + 0.41);
+    });
+  } catch (e) {}
+}
+
+/**
+ * Synthesizes a level win melody
+ */
+export function playLevelWinSound() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  try {
+    const notes = [523.25, 659.25, 783.99, 1046.50]; // upbeat C major arpeggio
+    notes.forEach((freq, index) => {
+      const osc = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + index * 0.1);
+      gainNode.gain.setValueAtTime(0.06, ctx.currentTime + index * 0.1);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + index * 0.1 + 0.35);
+      osc.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      osc.start(ctx.currentTime + index * 0.1);
+      osc.stop(ctx.currentTime + index * 0.1 + 0.36);
+    });
+  } catch (e) {}
+}
+
+/**
+ * Synthesizes a standard short menu navigation/select tick
+ */
+export function playMenuClickSound() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  try {
+    const osc = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(600, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.05);
+    gainNode.gain.setValueAtTime(0.04, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+    osc.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.06);
+  } catch (e) {}
+}
+
+/**
+ * Synthesizes runner active speed trail boost sound
+ */
+export function playActiveAbilityRunner() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  try {
+    const osc = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(300, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 0.3);
+    gainNode.gain.setValueAtTime(0.08, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.31);
+  } catch (e) {}
+}
+
+/**
+ * Synthesizes medicine pickup chime
+ */
+export function playMedicinePickupSound() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  try {
+    const osc = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+    osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.08); // E5
+    osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.16); // G5
+    gainNode.gain.setValueAtTime(0.06, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.32);
+  } catch (e) {}
+}
+
+/**
  * Synthesizes scary radial shriek sound blast effect
  */
 export function playSoundWaveAttack() {

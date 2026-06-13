@@ -7,6 +7,7 @@ import React from "react";
 import { CharacterClass } from "../types";
 import { MARCUS_SVG, FAIBE_SVG, RUNNER_SVG } from "../data";
 import { Skull, ShieldAlert, Zap, RefreshCw, Sparkles, HelpCircle } from "lucide-react";
+import { playMenuClickSound } from "../utils";
 
 interface MenuProps {
   onStartGame: (selectedClass: CharacterClass) => void;
@@ -87,7 +88,10 @@ export function Menu({ onStartGame }: MenuProps) {
           return (
             <div
               key={char.id}
-              onClick={() => setSelected(char.id)}
+              onClick={() => {
+                playMenuClickSound();
+                setSelected(char.id);
+              }}
               id={`char-card-${char.id}`}
               className={`group relative flex flex-col cursor-pointer rounded-2xl border-2 p-5 transition-all duration-300 transform hover:-translate-y-1 ${
                 isSelected
