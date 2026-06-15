@@ -35,9 +35,11 @@ export const RUNNER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 
     <linearGradient id="hoodieGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#1d4ed8"/></linearGradient>
   </defs>
   <ellipse cx="200" cy="650" rx="60" ry="10" fill="#000" opacity="0.3" />
-  <g id="legs">
+  <g id="left-leg">
     <path d="M 165,420 L 150,530 L 140,620 L 170,620 L 175,530 L 185,420 Z" fill="#1f2937" stroke="#111827" stroke-width="2" />
     <path d="M 140,620 L 130,642 L 168,642 L 170,620 Z" fill="#ef4444" stroke="#b91c1c" stroke-width="2" /><rect x="142" y="632" width="20" height="4" fill="#ffffff" />
+  </g>
+  <g id="right-leg">
     <path d="M 215,420 L 230,520 L 245,615 L 275,610 L 255,520 L 235,420 Z" fill="#1f2937" stroke="#111827" stroke-width="2" />
     <path d="M 245,615 L 258,638 L 288,632 L 275,610 Z" fill="#ef4444" stroke="#b91c1c" stroke-width="2" /><rect x="256" y="622" width="20" height="4" fill="#ffffff" transform="rotate(-5, 256, 622)" />
   </g>
@@ -47,9 +49,11 @@ export const RUNNER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 
     <path d="M 245,260 L 262,420" stroke="#ffffff" stroke-width="4" />
     <path d="M 195,260 Q 192,290 190,305 M 205,260 Q 208,290 210,305" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" />
   </g>
-  <g id="arms">
+  <g id="left-arm">
     <path d="M 150,260 L 115,340 L 128,350 L 160,285 Z" fill="url(#hoodieGrad)" stroke="#1e3a8a" stroke-width="2" />
     <circle cx="115" cy="350" r="12" fill="url(#studentSkin)" stroke="#a16244" stroke-width="1.5" />
+  </g>
+  <g id="right-arm">
     <path d="M 250,260 L 280,340 L 268,350 L 240,285 Z" fill="url(#hoodieGrad)" stroke="#1e3a8a" stroke-width="2" />
     <circle cx="280" cy="350" r="12" fill="url(#studentSkin)" stroke="#a16244" stroke-width="1.5" />
   </g>
@@ -69,9 +73,11 @@ export const MARCUS_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 
     <linearGradient id="vestGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#15803d"/><stop offset="100%" stop-color="#166534"/></linearGradient>
   </defs>
   <ellipse cx="200" cy="610" rx="100" ry="16" fill="#000" opacity="0.4" />
-  <g id="legs-heavy">
+  <g id="left-leg">
     <path d="M 125,430 L 115,580 L 165,580 L 165,450 Z" fill="#374151" stroke="#1f2937" stroke-width="3" />
     <path d="M 115,580 L 105,605 L 165,605 L 165,580 Z" fill="#1e1b18" stroke="#000" stroke-width="2" />
+  </g>
+  <g id="right-leg">
     <path d="M 275,430 L 285,580 L 235,580 L 235,450 Z" fill="#374151" stroke="#1f2937" stroke-width="3" />
     <path d="M 285,580 L 295,605 L 235,605 L 235,580 Z" fill="#1e1b18" stroke="#000" stroke-width="2" />
   </g>
@@ -84,9 +90,11 @@ export const MARCUS_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 
     <path d="M 170,260 L 200,295 L 230,260 Z" fill="#ffffff" stroke="#14532d" stroke-width="2.5" />
     <path d="M 194,260 L 206,260 L 200,295 Z" fill="#991b1b" />
   </g>
-  <g id="arms-heavy">
+  <g id="left-arm">
     <path d="M 110,270 Q 70,330 85,380 L 110,365 Q 95,330 120,285 Z" fill="#ffffff" stroke="#9ca3af" stroke-width="2" />
     <circle cx="85" cy="380" r="16" fill="url(#marcusSkin)" stroke="#b38771" stroke-width="2" />
+  </g>
+  <g id="right-arm">
     <path d="M 290,270 Q 330,330 315,380 L 290,365 Q 305,330 280,285 Z" fill="#ffffff" stroke="#9ca3af" stroke-width="2" />
     <circle cx="315" cy="380" r="16" fill="url(#marcusSkin)" stroke="#b38771" stroke-width="2" />
   </g>
@@ -111,10 +119,12 @@ export const FAIBE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4
     <linearGradient id="blouseGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#be123c"/><stop offset="100%" stop-color="#9f1239"/></linearGradient>
   </defs>
   <ellipse cx="200" cy="650" rx="70" ry="12" fill="#000" opacity="0.3" />
-  <g id="pants-traditional">
+  <g id="left-leg">
     <path d="M 155,420 L 145,615 L 180,615 L 185,420 Z" fill="#1e293b" stroke="#0f172a" stroke-width="2.5" />
-    <path d="M 215,420 L 220,615 L 255,615 L 245,420 Z" fill="#1e293b" stroke="#0f172a" stroke-width="2.5" />
     <path d="M 145,615 Q 130,620 135,635 L 180,635 Q 183,622 180,615 Z" fill="#111827" stroke="#000" stroke-width="2" />
+  </g>
+  <g id="right-leg">
+    <path d="M 215,420 L 220,615 L 255,615 L 245,420 Z" fill="#1e293b" stroke="#0f172a" stroke-width="2.5" />
     <path d="M 220,615 Q 217,622 220,635 L 265,635 Q 270,620 255,615 Z" fill="#111827" stroke="#000" stroke-width="2" />
   </g>
   <g id="tunic">
@@ -125,11 +135,13 @@ export const FAIBE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4
     <path d="M 185,375 C 190,370 210,370 215,375" fill="none" stroke="#fbbf24" stroke-width="3" stroke-linecap="round" />
     <path d="M 175,260 Q 200,245 225,260" fill="none" stroke="#fbbf24" stroke-width="4.5" />
   </g>
-  <g id="arms-traditional">
+  <g id="left-arm">
     <path d="M 145,260 Q 100,285 105,320 L 122,330 Q 120,305 155,280 Z" fill="url(#blouseGrad)" stroke="#881337" stroke-width="2" />
     <path d="M 108,322 L 95,355 L 110,360 L 122,328 Z" fill="url(#faibeSkin)" stroke="#9a6e55" stroke-width="1.5" />
     <circle cx="100" cy="365" r="10" fill="url(#faibeSkin)" stroke="#9a6e55" stroke-width="1.5" />
     <ellipse cx="102" cy="358" rx="8" ry="4" fill="none" stroke="#10b981" stroke-width="3" transform="rotate(-15, 102, 358)" />
+  </g>
+  <g id="right-arm">
     <path d="M 255,260 Q 290,300 280,345 L 262,345 Q 270,310 245,280 Z" fill="url(#blouseGrad)" stroke="#881337" stroke-width="2" />
     <path d="M 271,345 L 271,385 L 261,385 L 262,345 Z" fill="url(#faibeSkin)" stroke="#9a6e55" stroke-width="1.5" />
     <circle cx="266" cy="392" r="10" fill="url(#faibeSkin)" stroke="#9a6e55" stroke-width="1.5" />
@@ -143,6 +155,54 @@ export const FAIBE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4
     <path d="M 188,226 Q 200,234 212,226" fill="none" stroke="#1c1917" stroke-width="2" stroke-linecap="round" />
   </g>
 </svg>`;
+
+export const RUNNER_WALK1_SVG = RUNNER_SVG
+  .replace('<g id="left-leg">', '<g id="left-leg" transform="rotate(-15 175 420)">')
+  .replace('<g id="right-leg">', '<g id="right-leg" transform="rotate(15 225 420)">')
+  .replace('<g id="left-arm">', '<g id="left-arm" transform="rotate(25 150 260)">')
+  .replace('<g id="right-arm">', '<g id="right-arm" transform="rotate(-25 250 260)">');
+
+export const RUNNER_WALK2_SVG = RUNNER_SVG
+  .replace('<g id="left-leg">', '<g id="left-leg" transform="rotate(15 175 420)">')
+  .replace('<g id="right-leg">', '<g id="right-leg" transform="rotate(-15 225 420)">')
+  .replace('<g id="left-arm">', '<g id="left-arm" transform="rotate(-25 150 260)">')
+  .replace('<g id="right-arm">', '<g id="right-arm" transform="rotate(25 250 260)">');
+
+export const MARCUS_WALK1_SVG = MARCUS_SVG
+  .replace('<g id="left-leg">', '<g id="left-leg" transform="rotate(-12 145 430)">')
+  .replace('<g id="right-leg">', '<g id="right-leg" transform="rotate(12 255 430)">')
+  .replace('<g id="left-arm">', '<g id="left-arm" transform="rotate(20 110 270)">')
+  .replace('<g id="right-arm">', '<g id="right-arm" transform="rotate(-20 290 270)">');
+
+export const MARCUS_WALK2_SVG = MARCUS_SVG
+  .replace('<g id="left-leg">', '<g id="left-leg" transform="rotate(12 145 430)">')
+  .replace('<g id="right-leg">', '<g id="right-leg" transform="rotate(-12 255 430)">')
+  .replace('<g id="left-arm">', '<g id="left-arm" transform="rotate(-20 110 270)">')
+  .replace('<g id="right-arm">', '<g id="right-arm" transform="rotate(20 290 270)">');
+
+export const FAIBE_WALK1_SVG = FAIBE_SVG
+  .replace('<g id="left-leg">', '<g id="left-leg" transform="rotate(-15 170 420)">')
+  .replace('<g id="right-leg">', '<g id="right-leg" transform="rotate(15 230 420)">')
+  .replace('<g id="left-arm">', '<g id="left-arm" transform="rotate(25 145 260)">')
+  .replace('<g id="right-arm">', '<g id="right-arm" transform="rotate(-25 255 260)">');
+
+export const FAIBE_WALK2_SVG = FAIBE_SVG
+  .replace('<g id="left-leg">', '<g id="left-leg" transform="rotate(15 170 420)">')
+  .replace('<g id="right-leg">', '<g id="right-leg" transform="rotate(-15 230 420)">')
+  .replace('<g id="left-arm">', '<g id="left-arm" transform="rotate(-25 145 260)">')
+  .replace('<g id="right-arm">', '<g id="right-arm" transform="rotate(25 255 260)">');
+
+export const TOBBY_WALK1_SVG = TOBBY_SVG
+  .replace('<g id="left-leg">', '<g id="left-leg" transform="rotate(-15 168 440)">')
+  .replace('<g id="right-leg">', '<g id="right-leg" transform="rotate(15 232 440)">')
+  .replace('<g id="left-arm">', '<g id="left-arm" transform="rotate(30 150 247)">')
+  .replace('<g id="right-arm">', '<g id="right-arm" transform="rotate(-30 250 247)">');
+
+export const TOBBY_WALK2_SVG = TOBBY_SVG
+  .replace('<g id="left-leg">', '<g id="left-leg" transform="rotate(15 168 440)">')
+  .replace('<g id="right-leg">', '<g id="right-leg" transform="rotate(-15 232 440)">')
+  .replace('<g id="left-arm">', '<g id="left-arm" transform="rotate(-30 150 247)">')
+  .replace('<g id="right-arm">', '<g id="right-arm" transform="rotate(30 250 247)">');
 
 // Define the 30 desk layout generator for MAP_SVG
 export const generateSvgDesks = (): string => {

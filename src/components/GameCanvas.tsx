@@ -4,10 +4,55 @@
  */
 
 import React, { useRef, useState, useEffect } from "react";
-import { CharacterClass, PlayerState, TobbyState, AIState, PuddleState, SoundWaveState, MedicineItemState } from "../types";
-import { ROOMS, ALL_OBSTACLES, MAP_SVG, TOBBY_SVG, RUNNER_SVG, MARCUS_SVG, FAIBE_SVG } from "../data";
-import { isLocationWalkable, getRoomAt, checkLineOfSight, playScreamSound, playRamSound, playPacifySound, playDamageSound, playSoundWaveAttack, playFootstepSound, playActiveAbilityRunner, playMedicinePickupSound } from "../utils";
+import { CharacterClass, PlayerState, TobbyState, AIState, PuddleState, SoundWaveState, MedicineItemState, GameItemState, ItemType, DecoyCatnipState } from "../types";
+import { ROOMS, ALL_OBSTACLES, MAP_SVG, TOBBY_SVG, RUNNER_SVG, MARCUS_SVG, FAIBE_SVG, RUNNER_WALK1_SVG, RUNNER_WALK2_SVG, MARCUS_WALK1_SVG, MARCUS_WALK2_SVG, FAIBE_WALK1_SVG, FAIBE_WALK2_SVG, TOBBY_WALK1_SVG, TOBBY_WALK2_SVG } from "../data";
+import { isLocationWalkable, getRoomAt, checkLineOfSight, playScreamSound, playRamSound, playPacifySound, playDamageSound, playSoundWaveAttack, playFootstepSound, playActiveAbilityRunner, playMedicinePickupSound, setCurrentActiveFloor, getObstaclesForFloor } from "../utils";
 import { Shield, Sparkles, AlertTriangle, ArrowRight, Home, RefreshCw, Volume2, VolumeX, Eye, Flame, Heart, Zap } from "lucide-react";
+
+const jointAnchors = {
+  RUNNER: { ll: "175 420", rl: "225 420", la: "150 260", ra: "250 260", t: "200 340", h: "200 195" },
+  MARCUS: { ll: "145 430", rl: "255 430", la: "110 270", ra: "290 270", t: "200 340", h: "200 195" },
+  FAIBE:  { ll: "170 420", rl: "230 420", la: "145 260", ra: "255 260", t: "200 340", h: "200 195" },
+  TOBBY:  { ll: "168 440", rl: "232 440", la: "150 247", ra: "250 247", t: "200 340", h: "200 195" },
+};
+
+function getSvgWalkFrame(type: "RUNNER" | "MARCUS" | "FAIBE" | "TOBBY", baseSvg: string, phase: number): string {
+  const anchors = jointAnchors[type];
+  
+  // Clean continuous sine oscillations
+  const legAngle = Math.sin(phase) * 23; // 23 degree legs swing range
+  const rightLegAngle = Math.sin(phase + Math.PI) * 23;
+  const armAngle = Math.cos(phase) * 30; // 30 degree arms swing
+  const rightArmAngle = Math.cos(phase + Math.PI) * 30;
+  const bobY = Math.abs(Math.sin(phase * 2)) * 6.0; // hip bobbing
+  
+  // Slight torso tilting & head rotating logic
+  const torsoTilt = Math.sin(phase) * 2.0; 
+  const headBobAngle = Math.sin(phase) * 2.5;
+
+  let svg = baseSvg
+    .replace('<g id="left-leg">', `<g id="left-leg" transform="rotate(${legAngle} ${anchors.ll})">`)
+    .replace('<g id="right-leg">', `<g id="right-leg" transform="rotate(${rightLegAngle} ${anchors.rl})">`)
+    .replace('<g id="left-arm">', `<g id="left-arm" transform="rotate(${armAngle} ${anchors.la})">`)
+    .replace('<g id="right-arm">', `<g id="right-arm" transform="rotate(${rightArmAngle} ${anchors.ra})">`);
+
+  // Translate and rotate body sections
+  if (type === "RUNNER") {
+    svg = svg.replace('<g id="torso">', `<g id="torso" transform="translate(0, ${bobY}) rotate(${torsoTilt} ${anchors.t})">`);
+    svg = svg.replace('<g id="head">', `<g id="head" transform="translate(0, ${bobY * 1.3}) rotate(${headBobAngle} ${anchors.h})">`);
+  } else if (type === "MARCUS") {
+    svg = svg.replace('<g id="torso-heavy">', `<g id="torso-heavy" transform="translate(0, ${bobY}) rotate(${torsoTilt} ${anchors.t})">`);
+    svg = svg.replace('<g id="head-heavy">', `<g id="head-heavy" transform="translate(0, ${bobY * 1.3}) rotate(${headBobAngle} ${anchors.h})">`);
+  } else if (type === "FAIBE") {
+    svg = svg.replace('<g id="tunic">', `<g id="tunic" transform="translate(0, ${bobY}) rotate(${torsoTilt} ${anchors.t})">`);
+    svg = svg.replace('<g id="head-faibe">', `<g id="head-faibe" transform="translate(0, ${bobY * 1.2}) rotate(${headBobAngle} ${anchors.h})">`);
+  } else if (type === "TOBBY") {
+    svg = svg.replace('<g id="torso">', `<g id="torso" transform="translate(0, ${bobY}) rotate(${torsoTilt} ${anchors.t})">`);
+    svg = svg.replace('<g id="tobby-head" transform="translate(104, 25) scale(0.48)">', `<g id="tobby-head" transform="translate(104, ${25 + bobY * 1.1}) rotate(${headBobAngle}) scale(0.48)">`);
+  }
+
+  return svg;
+}
 
 interface GameCanvasProps {
   characterClass: CharacterClass;
@@ -38,6 +83,7 @@ export function GameCanvas({
   const [playerHp, setPlayerHp] = useState(1);
   const [playerMaxHp, setPlayerMaxHp] = useState(1);
   const [playerLives, setPlayerLives] = useState(3);
+  const [playerBurstEnergy, setPlayerBurstEnergy] = useState(100);
   const [tobbyCount, setTobbyCount] = useState(6);
   const [abilityCd, setAbilityCd] = useState(0);
   const [abilityActive, setAbilityActive] = useState(0);
@@ -70,22 +116,36 @@ export function GameCanvas({
     isPacifying: false,
     scratchDotDuration: 0,
     scratchDotTimer: 0,
+    burstEnergy: 100,
+    isBurstActive: false,
   });
 
   const tobbysRef = useRef<TobbyState[]>([]);
   const puddlesRef = useRef<PuddleState[]>([]);
   const soundWavesRef = useRef<SoundWaveState[]>([]);
-  const medicinesRef = useRef<MedicineItemState[]>([]);
+  const medicinesRef = useRef<GameItemState[]>([]);
   const freshGameRef = useRef<boolean>(true);
   const previousFloorRef = useRef<number>(-1);
   const staircaseCooldownRef = useRef<number>(0);
   const floorDataRef = useRef<{
     [floorNum: number]: {
       tobbys: TobbyState[];
-      medicines: MedicineItemState[];
+      medicines: GameItemState[];
       puddles: PuddleState[];
     };
   }>({});
+
+  // Custom stockpiled inventory quantities
+  const [catnipCharges, setCatnipCharges] = useState(2);
+  const [energyCanCharges, setEnergyCanCharges] = useState(1);
+  const [empCharges, setEmpCharges] = useState(1);
+  const [hyperChargeTimeState, setHyperChargeTime] = useState(0);
+  const [empActiveTime, setEmpActiveTime] = useState(0);
+
+  // Decoy ref tracking, EMP stun time tracking, and smooth keyframe walkway timer
+  const decoysRef = useRef<DecoyCatnipState[]>([]);
+  const empActiveTimeRef = useRef<number>(0);
+  const playerWalkTimeRef = useRef<number>(0);
   const footstepTimerRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
   const animationFrameIdRef = useRef<number | null>(null);
@@ -102,9 +162,16 @@ export function GameCanvas({
     runner: HTMLImageElement;
     marcus: HTMLImageElement;
     faibe: HTMLImageElement;
+    tobby_walk: HTMLImageElement[];
+    runner_walk: HTMLImageElement[];
+    marcus_walk: HTMLImageElement[];
+    faibe_walk: HTMLImageElement[];
   } | null>(null);
 
   const initializeLevel = () => {
+    // Set the global active floor layout in utils
+    setCurrentActiveFloor(currentFloor);
+
     // Save outgoing floor's state before switching!
     if (previousFloorRef.current !== -1 && previousFloorRef.current !== currentFloor) {
       floorDataRef.current[previousFloorRef.current] = {
@@ -169,6 +236,9 @@ export function GameCanvas({
     p.abilityActiveTime = 0;
     p.isRamming = false;
     p.isPacifying = false;
+    p.burstEnergy = p.burstEnergy || 100; // persist through floors but start at 100 on first load
+    p.isBurstActive = false;
+    setPlayerBurstEnergy(p.burstEnergy || 100);
     p.scratchDotDuration = 0;
     invincibilityTimeRef.current = 0;
 
@@ -267,46 +337,74 @@ export function GameCanvas({
       tobbysRef.current = tobbys;
       setTobbyCount(tobbys.length);
 
-      // Spawn medicine items in classrooms and other rooms!
-      const medicines: MedicineItemState[] = [];
-      let medId = 1;
+      // Spawn items (Medicine kits, Catnip decoys, Hyper cans, EMP core items) in rooms
+      const items: GameItemState[] = [];
+      let itemId = 1;
 
-      // Medicine-rich rooms
-      const medicineRooms = ["C1", "C2", "C3", "C4", "C5", "Office1", "Office2", "Toilets"];
-      medicineRooms.forEach((roomId) => {
-        const r = ROOMS.find((room) => room.id === roomId);
-        if (r) {
-          // Spawn 1 medicine in each room
-          let attempts = 0;
-          let spawned = false;
-          while (attempts < 150 && !spawned) {
-            const mx = r.minX + 30 + Math.random() * (r.maxX - r.minX - 60);
-            const my = r.minY + 30 + Math.random() * (r.maxY - r.minY - 60);
-            if (isLocationWalkable(mx, my, 12)) {
-              const distToSpawn = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
-              if (distToSpawn > 40) {
-                medicines.push({
-                  id: medId++,
-                  x: mx,
-                  y: my,
-                  roomId: roomId,
-                  healAmount: 8, // heals 8 HP
-                  pickedUp: false,
-                });
-                spawned = true;
+      const spawnPool = [
+        { type: ItemType.MEDICINE, rooms: ["C1", "C2", "C3", "C4", "C5", "Office1", "Office2", "Toilets"] },
+        { type: ItemType.CATNIP, rooms: ["C1", "C2", "C3", "C4", "C5", "Office2"] },
+        { type: ItemType.ENERGY_CAN, rooms: ["Office1", "Office2", "Toilets", "C3", "C5"] },
+        { type: ItemType.EMP, rooms: ["Office1", "Office2", "Toilets", "C2", "C4"] },
+      ];
+
+      spawnPool.forEach((itemDef) => {
+        itemDef.rooms.forEach((roomId) => {
+          // Spawn one of this item in the room with some probability!
+          const spawnChance = itemDef.type === ItemType.MEDICINE ? 0.75 : 0.45;
+          if (Math.random() < spawnChance) {
+            const r = ROOMS.find((room) => room.id === roomId);
+            if (r) {
+              let attempts = 0;
+              let spawned = false;
+              while (attempts < 100 && !spawned) {
+                const mx = r.minX + 30 + Math.random() * (r.maxX - r.minX - 60);
+                const my = r.minY + 30 + Math.random() * (r.maxY - r.minY - 60);
+                if (isLocationWalkable(mx, my, 12)) {
+                  const distToSpawn = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
+                  if (distToSpawn > 50) {
+                    items.push({
+                      id: itemId++,
+                      type: itemDef.type,
+                      x: mx,
+                      y: my,
+                      roomId: roomId,
+                      pickedUp: false,
+                    });
+                    spawned = true;
+                  }
+                }
+                attempts++;
               }
             }
-            attempts++;
           }
-        }
+        });
       });
 
-      medicinesRef.current = medicines;
+      medicinesRef.current = items;
+    }
+
+    // Set default item stocks on brand new game
+    if (freshGameRef.current) {
+      p.catnipCharges = p.catnipCharges !== undefined ? p.catnipCharges : 2;
+      p.energyCanCharges = p.energyCanCharges !== undefined ? p.energyCanCharges : 1;
+      p.empCharges = p.empCharges !== undefined ? p.empCharges : 1;
+      p.hyperChargeTime = 0;
+    } else {
+      p.catnipCharges = p.catnipCharges || 0;
+      p.energyCanCharges = p.energyCanCharges || 0;
+      p.empCharges = p.empCharges || 0;
+      p.hyperChargeTime = p.hyperChargeTime || 0;
     }
 
     // Initial React State bindings
     setPlayerHp(p.hp);
     setPlayerMaxHp(p.maxHp);
+    setCatnipCharges(p.catnipCharges);
+    setEnergyCanCharges(p.energyCanCharges);
+    setEmpCharges(p.empCharges);
+    setHyperChargeTime(p.hyperChargeTime);
+    setEmpActiveTime(empActiveTimeRef.current);
 
     previousFloorRef.current = currentFloor;
   };
@@ -318,21 +416,60 @@ export function GameCanvas({
 
   // 2. Pre-cache visual SVG Assets
   useEffect(() => {
-    const cache = {
-      map: new Image(),
-      tobby: new Image(),
-      runner: new Image(),
-      marcus: new Image(),
-      faibe: new Image(),
-    };
-
     const getSvgDataUrl = (svg: string) => `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 
-    cache.map.src = getSvgDataUrl(MAP_SVG);
-    cache.tobby.src = getSvgDataUrl(TOBBY_SVG);
-    cache.runner.src = getSvgDataUrl(RUNNER_SVG);
-    cache.marcus.src = getSvgDataUrl(MARCUS_SVG);
-    cache.faibe.src = getSvgDataUrl(FAIBE_SVG);
+    const r_walk: HTMLImageElement[] = [];
+    const m_walk: HTMLImageElement[] = [];
+    const f_walk: HTMLImageElement[] = [];
+    const t_walk: HTMLImageElement[] = [];
+
+    // Generate 12 keyframes of animation
+    for (let i = 0; i < 12; i++) {
+      const phase = (i / 12) * Math.PI * 2;
+
+      const rImg = new Image();
+      rImg.src = getSvgDataUrl(getSvgWalkFrame("RUNNER", RUNNER_SVG, phase));
+      r_walk.push(rImg);
+
+      const mImg = new Image();
+      mImg.src = getSvgDataUrl(getSvgWalkFrame("MARCUS", MARCUS_SVG, phase));
+      m_walk.push(mImg);
+
+      const fImg = new Image();
+      fImg.src = getSvgDataUrl(getSvgWalkFrame("FAIBE", FAIBE_SVG, phase));
+      f_walk.push(fImg);
+
+      const tImg = new Image();
+      tImg.src = getSvgDataUrl(getSvgWalkFrame("TOBBY", TOBBY_SVG, phase));
+      t_walk.push(tImg);
+    }
+
+    const mapImg = new Image();
+    mapImg.src = getSvgDataUrl(MAP_SVG);
+
+    const tobbyImg = new Image();
+    tobbyImg.src = getSvgDataUrl(TOBBY_SVG);
+
+    const runnerImg = new Image();
+    runnerImg.src = getSvgDataUrl(RUNNER_SVG);
+
+    const marcusImg = new Image();
+    marcusImg.src = getSvgDataUrl(MARCUS_SVG);
+
+    const faibeImg = new Image();
+    faibeImg.src = getSvgDataUrl(FAIBE_SVG);
+
+    const cache = {
+      map: mapImg,
+      tobby: tobbyImg,
+      runner: runnerImg,
+      marcus: marcusImg,
+      faibe: faibeImg,
+      tobby_walk: t_walk,
+      runner_walk: r_walk,
+      marcus_walk: m_walk,
+      faibe_walk: f_walk,
+    };
 
     imagesCachedRef.current = cache;
   }, []);
@@ -348,6 +485,18 @@ export function GameCanvas({
       if (e.key === " ") {
         e.preventDefault();
         triggerSpecialAbility();
+      }
+
+      // Numerical utility item usage
+      if (key === "1") {
+        e.preventDefault();
+        triggerItemUse(1);
+      } else if (key === "2") {
+        e.preventDefault();
+        triggerItemUse(2);
+      } else if (key === "3") {
+        e.preventDefault();
+        triggerItemUse(3);
       }
 
       // Punch/Hit key binding
@@ -516,6 +665,128 @@ export function GameCanvas({
     }
   };
 
+  // --- UTILITY ITEM COMMAND ACTIONS ---
+  const useCatnipDecoy = () => {
+    const p = playerRef.current;
+    if ((p.catnipCharges || 0) > 0) {
+      p.catnipCharges--;
+      setCatnipCharges(p.catnipCharges);
+
+      decoysRef.current.push({
+        id: Date.now() + Math.random(),
+        x: p.x,
+        y: p.y,
+        timeLeft: 6.0, // active for 6 seconds
+        pulseTimer: 0,
+      });
+
+      // Emit starting visual sonic wave
+      soundWavesRef.current.push({
+        x: p.x,
+        y: p.y,
+        radius: 12,
+        maxRadius: 180,
+        timeLeft: 0.5,
+      });
+
+      if (!muted) {
+         try {
+           const c = new (window.AudioContext || (window as any).webkitAudioContext)();
+           const osc = c.createOscillator();
+           const g = c.createGain();
+           osc.type = "triangle";
+           osc.frequency.setValueAtTime(440, c.currentTime);
+           osc.frequency.exponentialRampToValueAtTime(880, c.currentTime + 0.15);
+           g.gain.setValueAtTime(0.04, c.currentTime);
+           g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.16);
+           osc.connect(g);
+           g.connect(c.destination);
+           osc.start();
+           osc.stop(c.currentTime + 0.17);
+         } catch(e) {}
+      }
+    }
+  };
+
+  const useEnergyCan = () => {
+    const p = playerRef.current;
+    if ((p.energyCanCharges || 0) > 0) {
+      p.energyCanCharges--;
+      setEnergyCanCharges(p.energyCanCharges);
+
+      p.hyperChargeTime = 6.0; // 6s Golden Hyper splayed rush
+      p.burstEnergy = 100;
+      setPlayerBurstEnergy(100);
+
+      if (!muted) {
+         try {
+           const c = new (window.AudioContext || (window as any).webkitAudioContext)();
+           const osc = c.createOscillator();
+           const g = c.createGain();
+           osc.type = "sawtooth";
+           osc.frequency.setValueAtTime(600, c.currentTime);
+           osc.frequency.linearRampToValueAtTime(1400, c.currentTime + 0.25);
+           g.gain.setValueAtTime(0.05, c.currentTime);
+           g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.26);
+           osc.connect(g);
+           g.connect(c.destination);
+           osc.start();
+           osc.stop(c.currentTime + 0.27);
+         } catch(e) {}
+      }
+    }
+  };
+
+  const useEMPPulsar = () => {
+    const p = playerRef.current;
+    if ((p.empCharges || 0) > 0) {
+      p.empCharges--;
+      setEmpCharges(p.empCharges);
+
+      empActiveTimeRef.current = 5.0; // Freeze enemies for 5s
+      setEmpActiveTime(5.0);
+
+      // Huge radiating signal pulse
+      soundWavesRef.current.push({
+        x: p.x,
+        y: p.y,
+        radius: 10,
+        maxRadius: 1000,
+        timeLeft: 0.8,
+      });
+
+      if (!muted) {
+         try {
+           const c = new (window.AudioContext || (window as any).webkitAudioContext)();
+           // Heavy electronic static blast
+           const osc = c.createOscillator();
+           const g = c.createGain();
+           osc.type = "square";
+           osc.frequency.setValueAtTime(120, c.currentTime);
+           osc.frequency.exponentialRampToValueAtTime(30, c.currentTime + 0.35);
+           g.gain.setValueAtTime(0.08, c.currentTime);
+           g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.36);
+           osc.connect(g);
+           g.connect(c.destination);
+           osc.start();
+           osc.stop(c.currentTime + 0.37);
+         } catch(e) {}
+      }
+    }
+  };
+
+  // Central trigger router for keyboard and click-to-use hud hooks
+  const triggerItemUse = (itemSlot: number) => {
+    if (playerRef.current.hp <= 0) return;
+    if (itemSlot === 1) {
+      useCatnipDecoy();
+    } else if (itemSlot === 2) {
+      useEnergyCan();
+    } else if (itemSlot === 3) {
+      useEMPPulsar();
+    }
+  };
+
   // 4b. Trigger Unique Active Abilities
   const triggerSpecialAbility = () => {
     const p = playerRef.current;
@@ -585,6 +856,25 @@ export function GameCanvas({
       if (p.abilityCooldown < 0) p.abilityCooldown = 0;
     }
 
+    // Ticking stockpiled utility item triggers
+    if (p.hyperChargeTime && p.hyperChargeTime > 0) {
+      p.hyperChargeTime -= dt;
+      if (p.hyperChargeTime < 0) p.hyperChargeTime = 0;
+      setHyperChargeTime(p.hyperChargeTime);
+    }
+
+    decoysRef.current.forEach((dec) => {
+      dec.timeLeft -= dt;
+      dec.pulseTimer += dt;
+    });
+    decoysRef.current = decoysRef.current.filter((dec) => dec.timeLeft > 0);
+
+    if (empActiveTimeRef.current > 0) {
+      empActiveTimeRef.current -= dt;
+      if (empActiveTimeRef.current < 0) empActiveTimeRef.current = 0;
+      setEmpActiveTime(empActiveTimeRef.current);
+    }
+
     if (staircaseCooldownRef.current > 0) {
       staircaseCooldownRef.current -= dt;
       if (staircaseCooldownRef.current < 0) staircaseCooldownRef.current = 0;
@@ -632,10 +922,26 @@ export function GameCanvas({
       }
     }
 
+    // --- BURST MODE CALCULATION ---
+    const isShiftHeld = !!keys["shift"];
+    const playerIsMoving = dx !== 0 || dy !== 0;
+
+    if (isShiftHeld && playerIsMoving && (p.burstEnergy ?? 100) > 0) {
+      p.isBurstActive = true;
+      p.burstEnergy = Math.max(0, (p.burstEnergy ?? 100) - dt * 25); // drains in 4 seconds
+    } else {
+      p.isBurstActive = false;
+      p.burstEnergy = Math.min(100, (p.burstEnergy ?? 100) + dt * 10); // recharges in 10 seconds
+    }
+    setPlayerBurstEnergy(Math.round(p.burstEnergy));
+
     // Determine current speed modifier
     let baseSpeed = characterClass === CharacterClass.RUNNER ? 75 : 50;
     if (p.isRamming) {
       baseSpeed = 75; // Marcus builds speed to 1.5x (75 px/s)
+    }
+    if (p.isBurstActive) {
+      baseSpeed *= 1.8; // Active Burst increases velocity speed by 80% (1.8x)
     }
 
     // Check water puddle debuff (50% speed slow)
@@ -649,20 +955,38 @@ export function GameCanvas({
     }
     const currentSpeed = inPuddle ? baseSpeed * 0.5 : baseSpeed;
 
-    // --- MEDICINE PICKUP DETECTION ---
-    for (const med of medicinesRef.current) {
-      if (!med.pickedUp) {
-        const distToMed = Math.sqrt((p.x - med.x) ** 2 + (p.y - med.y) ** 2);
-        if (distToMed <= 24) {
-          if (p.hp < p.maxHp) {
-            med.pickedUp = true;
-            p.hp = Math.min(p.maxHp, p.hp + med.healAmount);
-            setPlayerHp(p.hp);
+    // --- UTILITY ITEM PICKUP DETECTION ---
+    for (const item of medicinesRef.current) {
+      if (!item.pickedUp) {
+        const distToItem = Math.sqrt((p.x - item.x) ** 2 + (p.y - item.y) ** 2);
+        if (distToItem <= 24) {
+          let canPickUp = true;
+
+          if (item.type === ItemType.MEDICINE) {
+            if (p.hp >= p.maxHp) {
+              canPickUp = false; // Don't pick up medicine if HP is already full!
+            } else {
+              p.hp = Math.min(p.maxHp, p.hp + 8);
+              setPlayerHp(p.hp);
+            }
+          } else if (item.type === ItemType.CATNIP) {
+            p.catnipCharges = (p.catnipCharges || 0) + 1;
+            setCatnipCharges(p.catnipCharges);
+          } else if (item.type === ItemType.ENERGY_CAN) {
+            p.energyCanCharges = (p.energyCanCharges || 0) + 1;
+            setEnergyCanCharges(p.energyCanCharges);
+          } else if (item.type === ItemType.EMP) {
+            p.empCharges = (p.empCharges || 0) + 1;
+            setEmpCharges(p.empCharges);
+          }
+
+          if (canPickUp) {
+            item.pickedUp = true;
 
             // Emit visual healing ripples
             soundWavesRef.current.push({
-              x: med.x,
-              y: med.y,
+              x: item.x,
+              y: item.y,
               radius: 6,
               maxRadius: 40,
               timeLeft: 0.35,
@@ -748,6 +1072,16 @@ export function GameCanvas({
       puddleDamageTimerRef.current = 0;
     }
 
+    // Record player walk cycle phase if they are actively moving
+    const isMoving = dx !== 0 || dy !== 0;
+    if (isMoving) {
+      // Speed up ankle swing proportional to velocity
+      const animFreq = p.isBurstActive ? 16.5 : 9.5;
+      playerWalkTimeRef.current += dt * animFreq;
+    } else {
+      playerWalkTimeRef.current = 0; // return to idle/reset
+    }
+
     // --- E. UPDATE TOBBY CLONES AI STATE MACHINE ---
     const isFloorPacified = p.isPacifying;
     tobbysRef.current.forEach((t) => {
@@ -769,10 +1103,50 @@ export function GameCanvas({
         return;
       }
 
+      // Check if Tobby is frozen by electric EMP discharge
+      const isEMPFrozen = empActiveTimeRef.current > 0;
+      if (isEMPFrozen) {
+        t.stareTimer = 0;
+        t.aiState = AIState.IDLE;
+        return; // Arrests all actions and movement
+      }
+
+      // Olfactory distraction from active Catnip Decoy pouches on the ground
+      let nearbyDecoy: DecoyCatnipState | null = null;
+      let minDecoyDist = 260; // 260px smelling range
+      for (const dec of decoysRef.current) {
+        const decoyDist = Math.sqrt((dec.x - t.x) ** 2 + (dec.y - t.y) ** 2);
+        if (decoyDist < minDecoyDist && checkLineOfSight(t.x, t.y, dec.x, dec.y)) {
+          minDecoyDist = decoyDist;
+          nearbyDecoy = dec;
+        }
+      }
+
+      if (nearbyDecoy) {
+        t.aiState = AIState.IDLE; // calmed down
+        const decoyDx = nearbyDecoy.x - t.x;
+        const decoyDy = nearbyDecoy.y - t.y;
+        t.angle = Math.atan2(decoyDy, decoyDx);
+
+        const decoyDist = Math.sqrt(decoyDx ** 2 + decoyDy ** 2);
+        if (decoyDist > 8) {
+          const moveSpeed = t.speed ? t.speed * 0.70 : 25;
+          const stepX = Math.cos(t.angle) * moveSpeed * dt;
+          const stepY = Math.sin(t.angle) * moveSpeed * dt;
+          if (isLocationWalkable(t.x + stepX, t.y + stepY, 10)) {
+            t.x += stepX;
+            t.y += stepY;
+          }
+        }
+        return; // Skips chasing player
+      }
+
       const dist = Math.sqrt((p.x - t.x) ** 2 + (p.y - t.y) ** 2);
 
       // Spotlight search trigger within range and having clear LOS
-      const hasLos = dist < 250 && checkLineOfSight(t.x, t.y, p.x, p.y);
+      // Sprinters and rammers make high noise, increasing Tobby's detection sensing field to 350px. Normal speed is 220px.
+      const detectionRange = (p.isBurstActive || p.isRamming) ? 350 : 220;
+      const hasLos = dist < detectionRange && checkLineOfSight(t.x, t.y, p.x, p.y);
 
       if (hasLos) {
         if (t.aiState !== AIState.CHASING) {
@@ -867,8 +1241,8 @@ export function GameCanvas({
         t.aiState = AIState.IDLE;
 
         if (t.isStationary) {
-          // Stationary Sentries stand completely still scanning. They slowly rotate head left and right like security cameras
-          t.angle += Math.sin(t.wiggleOffset * 0.04) * 0.008;
+          // Stationary Sentries stand completely still scanning. They rotate left and right with a wider sweep arc
+          t.angle += Math.sin(t.wiggleOffset * 0.15) * 0.025;
         } else {
           // If we don't have a patrol target or have reached it, pick a new one!
           const distToPatrol = Math.sqrt((t.patrolTargetX - t.x) ** 2 + (t.patrolTargetY - t.y) ** 2);
@@ -1117,6 +1491,54 @@ export function GameCanvas({
     // 1. Draw static Blueprint background
     ctx.drawImage(cache.map, 0, 0, 900, 1000);
 
+    // 1.5. Draw procedurally altered level obstacles for visual indicators
+    if (currentFloor !== 5) {
+      const activeObs = getObstaclesForFloor(currentFloor);
+      activeObs.forEach((obs) => {
+        ctx.fillStyle = "#1e293b";
+        ctx.strokeStyle = "#475569";
+        ctx.lineWidth = 1.2;
+
+        if (
+          obs.name?.includes("Barricade") ||
+          obs.name?.includes("Blockade") ||
+          obs.name?.includes("Debris") ||
+          obs.name?.includes("Flipped") ||
+          obs.name?.includes("Pile")
+        ) {
+          ctx.fillStyle = "#111827"; // deep hazard slate
+          ctx.strokeStyle = "#ef4444"; // red warning line
+          ctx.lineWidth = 1.6;
+        } else if (obs.name?.includes("Study")) {
+          ctx.fillStyle = "#0f172a"; // blue table group
+          ctx.strokeStyle = "#38bdf8"; // bright cyan border
+        }
+
+        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+        ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
+
+        // Draw cross lines for barrier obstacles
+        if (
+          obs.name?.includes("Barricade") ||
+          obs.name?.includes("Blockade") ||
+          obs.name?.includes("Debris") ||
+          obs.name?.includes("Flipped")
+        ) {
+          ctx.strokeStyle = "rgba(239, 68, 68, 0.4)";
+          ctx.beginPath();
+          ctx.moveTo(obs.x, obs.y);
+          ctx.lineTo(obs.x + obs.width, obs.y + obs.height);
+          ctx.moveTo(obs.x + obs.width, obs.y);
+          ctx.lineTo(obs.x, obs.y + obs.height);
+          ctx.stroke();
+        } else {
+          // Standard study grid inner desktop detail
+          ctx.strokeStyle = "rgba(71, 85, 105, 0.5)";
+          ctx.strokeRect(obs.x + 3, obs.y + 3, obs.width - 6, obs.height - 6);
+        }
+      });
+    }
+
     // 2. Draw Active Water Puddles
     puddlesRef.current.forEach((pud) => {
       ctx.beginPath();
@@ -1134,49 +1556,179 @@ export function GameCanvas({
       ctx.stroke();
     });
 
-     // 2.5. Draw Medicine Items (First Aid Kits)
-    medicinesRef.current.forEach((med) => {
-      if (med.pickedUp) return;
+     // 2.5. Draw Diversified Utility Items
+    medicinesRef.current.forEach((item) => {
+      if (item.pickedUp) return;
 
-      // Draw pulsating green healing aura under the kit
       const auraPulse = 8 + Math.sin(Date.now() / 150) * 2.5;
 
-      ctx.beginPath();
-      ctx.arc(med.x, med.y, auraPulse, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(34, 197, 94, 0.15)";
-      ctx.strokeStyle = "rgba(34, 197, 94, 0.45)";
-      ctx.lineWidth = 1.0;
-      ctx.fill();
-      ctx.stroke();
+      if (item.type === ItemType.MEDICINE) {
+        // --- 1. MEDICINE BRIEFCASE ---
+        // Pulsating green aura
+        ctx.beginPath();
+        ctx.arc(item.x, item.y, auraPulse, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(34, 197, 94, 0.15)";
+        ctx.strokeStyle = "rgba(34, 197, 94, 0.45)";
+        ctx.lineWidth = 1.0;
+        ctx.fill();
+        ctx.stroke();
 
-      // Draw briefcase white body
-      ctx.fillStyle = "#f8fafc";
-      ctx.strokeStyle = "#475569";
+        ctx.fillStyle = "#f8fafc";
+        ctx.strokeStyle = "#475569";
+        ctx.lineWidth = 1.2;
+
+        const kw = 12;
+        const kh = 9;
+        const kx = item.x - kw / 2;
+        const ky = item.y - kh / 2;
+
+        ctx.beginPath();
+        ctx.rect(kx, ky, kw, kh);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.rect(item.x - 2, ky - 2.2, 4, 2.2);
+        ctx.strokeStyle = "#475569";
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+
+        // Cross symbol
+        ctx.fillStyle = "#22c55e";
+        ctx.fillRect(item.x - 3.5, item.y - 1.0, 7.0, 2.0);
+        ctx.fillRect(item.x - 1.0, item.y - 3.5, 2.0, 7.0);
+
+      } else if (item.type === ItemType.CATNIP) {
+        // --- 2. CATNIP SMELLY POUCH ---
+        // Pulsating purple/magenta aroma aura
+        ctx.beginPath();
+        ctx.arc(item.x, item.y, auraPulse + 2, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(168, 85, 247, 0.18)";
+        ctx.strokeStyle = "rgba(168, 85, 247, 0.45)";
+        ctx.lineWidth = 1.0;
+        ctx.fill();
+        ctx.stroke();
+
+        // Drawn herbal pouch (triangle/polygon purse) Styled with rich detail
+        ctx.fillStyle = "#a855f7"; // deep lavender purple
+        ctx.strokeStyle = "#d8b4fe"; // light violet border
+        ctx.lineWidth = 1.2;
+
+        ctx.beginPath();
+        ctx.moveTo(item.x, item.y - 7);
+        ctx.lineTo(item.x - 6, item.y + 5);
+        ctx.lineTo(item.x + 6, item.y + 5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // draw pouch tie band
+        ctx.beginPath();
+        ctx.arc(item.x, item.y - 2, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = "#fb7185"; // pink ribbon tie
+        ctx.fill();
+
+      } else if (item.type === ItemType.ENERGY_CAN) {
+        // --- 3. HARD REBUFF HYPER SODA CAN ---
+        // Golden sparkling aura
+        ctx.beginPath();
+        ctx.arc(item.x, item.y, auraPulse + 1, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(245, 158, 11, 0.16)";
+        ctx.strokeStyle = "rgba(245, 158, 11, 0.45)";
+        ctx.lineWidth = 1.0;
+        ctx.fill();
+        ctx.stroke();
+
+        // Retro Soda Can (Cylinder)
+        ctx.fillStyle = "#f59e0b"; // yellow orange
+        ctx.strokeStyle = "#78350f";
+        ctx.lineWidth = 1.2;
+
+        ctx.beginPath();
+        ctx.rect(item.x - 4.5, item.y - 6.5, 9, 13);
+        ctx.fill();
+        ctx.stroke();
+
+        // Can metal cap shiny top
+        ctx.fillStyle = "#94a3b8"; // slate aluminum top
+        ctx.fillRect(item.x - 3.5, item.y - 7.5, 7, 1);
+
+        // Lightning speed bolt symbol inside can
+        ctx.fillStyle = "#ef4444"; // fire red bolt
+        ctx.beginPath();
+        ctx.moveTo(item.x + 1, item.y - 4);
+        ctx.lineTo(item.x - 2, item.y + 0.5);
+        ctx.lineTo(item.x + 0.5, item.y + 0.5);
+        ctx.lineTo(item.x - 1, item.y + 4.5);
+        ctx.lineTo(item.x + 2, item.y - 0.2);
+        ctx.lineTo(item.x - 0.5, item.y - 0.2);
+        ctx.closePath();
+        ctx.fill();
+
+      } else if (item.type === ItemType.EMP) {
+        // --- 4. SECURE EMP DISCHARGE CORE ---
+        // Electric electric blue aura
+        ctx.beginPath();
+        ctx.arc(item.x, item.y, auraPulse + 3, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(6, 182, 212, 0.18)";
+        ctx.strokeStyle = "rgba(6, 182, 212, 0.55)";
+        ctx.lineWidth = 1.0;
+        ctx.fill();
+        ctx.stroke();
+
+        // Futuristic electric pulsar core (circle tech node)
+        ctx.fillStyle = "#0284c7"; // electric tech cyan sky-blue
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 1.2;
+
+        ctx.beginPath();
+        ctx.arc(item.x, item.y, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // 4 radiating electric magnetic rods
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 1.0;
+        for (let i = 0; i < 4; i++) {
+          const angle = (i * Math.PI) / 2;
+          ctx.beginPath();
+          ctx.moveTo(item.x + Math.cos(angle) * 3, item.y + Math.sin(angle) * 3);
+          ctx.lineTo(item.x + Math.cos(angle) * 8, item.y + Math.sin(angle) * 8);
+          ctx.stroke();
+        }
+      }
+    });
+
+    // 2.6. Draw Active Catnip Decoy Zone Vapor clouds
+    decoysRef.current.forEach((dec) => {
+      // Draw smooth aromatic purple vapor cloud expanding and shrinking
+      const pulseRadius = 24 + Math.sin(dec.pulseTimer * 8) * 8;
+      ctx.beginPath();
+      ctx.arc(dec.x, dec.y, pulseRadius, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(168, 85, 247, 0.12)";
+      ctx.strokeStyle = "rgba(168, 85, 247, 0.35)";
       ctx.lineWidth = 1.2;
-
-      const kw = 12;
-      const kh = 9;
-      const kx = med.x - kw / 2;
-      const ky = med.y - kh / 2;
-
-      ctx.beginPath();
-      ctx.rect(kx, ky, kw, kh);
       ctx.fill();
       ctx.stroke();
 
-      // Briefcase handle at top
+      // Inner aromatic green/magenta pile
       ctx.beginPath();
-      ctx.rect(med.x - 2, ky - 2.2, 4, 2.2);
-      ctx.strokeStyle = "#475569";
-      ctx.lineWidth = 0.8;
+      ctx.arc(dec.x, dec.y, 7, 0, Math.PI * 2);
+      ctx.fillStyle = "#a855f7"; // purple aromatic center
+      ctx.fill();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1.0;
       ctx.stroke();
 
-      // Red/Green cross symbol
-      ctx.fillStyle = "#22c55e"; // Emerald healing green
-      // Horizontal bar
-      ctx.fillRect(med.x - 3.5, med.y - 1.0, 7.0, 2.0);
-      // Vertical bar
-      ctx.fillRect(med.x - 1.0, med.y - 3.5, 2.0, 7.0);
+      // floating bubbles representing floating vapors
+      for (let i = 0; i < 3; i++) {
+        const bubbleX = dec.x + Math.sin(dec.pulseTimer * 3 + i * 2) * 12;
+        const bubbleOffset = (dec.pulseTimer * 22 + i * 15) % 35;
+        ctx.beginPath();
+        ctx.arc(bubbleX, dec.y - bubbleOffset, 2, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(192, 132, 252, 0.75)";
+        ctx.fill();
+      }
     });
 
     // 3. Draw sound ripples
@@ -1262,6 +1814,28 @@ export function GameCanvas({
         ctx.fill();
       }
 
+      // Draw EMP frozen electric arcs above Tobby
+      const isCurrentlyEMPFrozen = empActiveTimeRef.current > 0;
+      if (isCurrentlyEMPFrozen) {
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, 24, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(6, 182, 212, 0.75)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // 3 zigzagging electricity bolts radiating around t.y
+        ctx.strokeStyle = "#22d3ee";
+        ctx.lineWidth = 1.2;
+        for (let j = 0; j < 3; j++) {
+          const boltAngle = (j * Math.PI * 2) / 3 + Date.now() * 0.05;
+          ctx.beginPath();
+          ctx.moveTo(t.x + Math.cos(boltAngle) * 8, t.y - 10 + Math.sin(boltAngle) * 8);
+          ctx.lineTo(t.x + Math.cos(boltAngle + 0.3) * 14, t.y - 18 + Math.sin(boltAngle + 0.3) * 14);
+          ctx.lineTo(t.x + Math.cos(boltAngle) * 18, t.y - 25 + Math.sin(boltAngle) * 18);
+          ctx.stroke();
+        }
+      }
+
       // Pacified sparkles
       if (p.isPacifying) {
         ctx.beginPath();
@@ -1310,7 +1884,17 @@ export function GameCanvas({
       if (isFlashActive) {
         ctx.filter = "brightness(2) sepia(1) hue-rotate(-50deg) saturate(3)";
       }
-      ctx.drawImage(cache.tobby, -14, -28, 28, 56);
+      
+      let activeTobbyImg = cache.tobby;
+      if (t.aiState === AIState.CHASING) {
+        const frameIdx = Math.floor(t.wiggleOffset * 1.5) % 12;
+        activeTobbyImg = cache.tobby_walk[frameIdx] || cache.tobby;
+      } else if (!t.isStationary) {
+        const frameIdx = Math.floor(t.wiggleOffset * 1.0) % 12;
+        activeTobbyImg = cache.tobby_walk[frameIdx] || cache.tobby;
+      }
+
+      ctx.drawImage(activeTobbyImg, -14, -28, 28, 56);
       if (isFlashActive) {
         ctx.filter = "none";
       }
@@ -1402,9 +1986,69 @@ export function GameCanvas({
       ctx.restore();
     }
 
-    // Draw player asset frame (Scaled up from 24x24 to 38x38)
-    const playerImg = characterClass === CharacterClass.RUNNER ? cache.runner : characterClass === CharacterClass.MARCUS ? cache.marcus : cache.faibe;
+    // Draw Burst Mode high-speed wind aura/glow of spinning cyan and amber particles under the player
+    if (p.isBurstActive) {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(Date.now() / 80);
+      
+      // Outer bright glowing cyan circle
+      ctx.beginPath();
+      ctx.arc(0, 0, 24 + Math.sin(Date.now() / 60) * 4, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(14, 165, 233, 0.65)"; // cyan aura
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // Golden electric flares radiating outward
+      ctx.strokeStyle = "rgba(245, 158, 11, 0.85)"; // amber sparks
+      ctx.lineWidth = 1.6;
+      for (let i = 0; i < 4; i++) {
+        ctx.rotate(Math.PI / 2);
+        ctx.beginPath();
+        ctx.moveTo(0, -18);
+        ctx.lineTo(-4, -24);
+        ctx.lineTo(4, -24);
+        ctx.closePath();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Draw player asset frame (Scaled up from 24x24 to 38x38) with rich dynamic walking animations
+    let playerImg = cache.runner;
+    if (isMoving) {
+      const idx = Math.floor(playerWalkTimeRef.current) % 12;
+      if (characterClass === CharacterClass.RUNNER) {
+        playerImg = cache.runner_walk[idx] || cache.runner;
+      } else if (characterClass === CharacterClass.MARCUS) {
+        playerImg = cache.marcus_walk[idx] || cache.marcus;
+      } else if (characterClass === CharacterClass.FAIBE) {
+        playerImg = cache.faibe_walk[idx] || cache.faibe;
+      }
+    } else {
+      if (characterClass === CharacterClass.RUNNER) playerImg = cache.runner;
+      else if (characterClass === CharacterClass.MARCUS) playerImg = cache.marcus;
+      else if (characterClass === CharacterClass.FAIBE) playerImg = cache.faibe;
+    }
+
     const playerAngle = p.angle + Math.PI / 2;
+
+    // Retro motion blur ghost trails for golden burst/hypercharged speed state
+    const isPlayerSpeeding = p.isBurstActive || (p.hyperChargeTime && p.hyperChargeTime > 0);
+    if (isPlayerSpeeding) {
+      for (let s = 1; s <= 3; s++) {
+        const trailX = p.x - Math.cos(p.angle) * s * 12;
+        const trailY = p.y - Math.sin(p.angle) * s * 12;
+
+        ctx.save();
+        ctx.translate(trailX, trailY);
+        ctx.rotate(playerAngle);
+        ctx.globalAlpha = 0.40 - s * 0.10; // Fades out with distance
+        ctx.filter = "brightness(1.5) sepia(1) hue-rotate(5deg) saturate(3)"; // Make golden/yellow
+        ctx.drawImage(playerImg, -19, -19, 38, 38);
+        ctx.restore();
+      }
+    }
 
     ctx.save();
     ctx.translate(p.x, p.y);
@@ -1531,6 +2175,25 @@ export function GameCanvas({
                   />
                 ))}
               </div>
+            </div>
+
+            {/* Burst Sprint Energy Meter */}
+            <div>
+              <div className="flex justify-between items-baseline mb-1 text-xs">
+                <span className="text-slate-400 font-bold flex items-center gap-1.5">
+                  <Zap size={14} className="text-amber-400 fill-amber-450/20" /> BURST SPRINT SENSE:
+                </span>
+                <span className="font-extrabold text-amber-400 text-sm">
+                  {playerBurstEnergy}%
+                </span>
+              </div>
+              <div className="w-full h-3 bg-slate-900 border border-slate-800 rounded-full overflow-hidden p-0.5">
+                <div
+                  className="h-full bg-gradient-to-r from-amber-500 to-yellow-400 rounded-full transition-all duration-100"
+                  style={{ width: `${playerBurstEnergy}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1 uppercase">Hold [Left Shift] to trigger Burst Mode (80% Speed Spikes)</p>
             </div>
 
             {/* Bleeding Indicator */}

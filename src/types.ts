@@ -36,6 +36,17 @@ export interface PlayerState {
   // DoT (Damage over Time)
   scratchDotDuration: number; // in seconds
   scratchDotTimer: number; // logs timing of 1-sec ticks
+  // Burst Mode
+  burstEnergy: number; // 0 to 100
+  isBurstActive: boolean;
+  
+  // Custom Stockpiled Item inventories
+  catnipCharges: number;
+  energyCanCharges: number;
+  empCharges: number;
+
+  // Hyper rush duration helper
+  hyperChargeTime: number; // in seconds
 }
 
 export interface TobbyState {
@@ -115,3 +126,29 @@ export interface MedicineItemState {
   healAmount: number;
   pickedUp: boolean;
 }
+
+export enum ItemType {
+  MEDICINE = "MEDICINE",
+  CATNIP = "CATNIP",
+  ENERGY_CAN = "ENERGY_CAN",
+  EMP = "EMP",
+}
+
+export interface GameItemState {
+  id: number;
+  type: ItemType;
+  x: number;
+  y: number;
+  roomId: string;
+  pickedUp: boolean;
+}
+
+// Model for a decoy catnip placed on the floor
+export interface DecoyCatnipState {
+  id: number;
+  x: number;
+  y: number;
+  timeLeft: number; // duration in seconds
+  pulseTimer: number;
+}
+

@@ -4,6 +4,117 @@
  */
 
 import { ROOMS, DOORWAYS, ALL_OBSTACLES } from "./data";
+import { GameObstacle } from "./types";
+
+let currentActiveFloor = 5;
+
+/**
+ * Updates the current floor context for dynamic obstacle detection.
+ */
+export function setCurrentActiveFloor(floor: number) {
+  currentActiveFloor = floor;
+}
+
+/**
+ * Returns procedural, customized layout obstacles for each specific floor number.
+ */
+export function getObstaclesForFloor(floor: number): GameObstacle[] {
+  if (floor === 5) {
+    return ALL_OBSTACLES;
+  }
+
+  const obstacles: GameObstacle[] = [];
+
+  // 1. Classroom Desks specific to the floor
+  const classroomsY = [40, 215, 390, 565, 740];
+  classroomsY.forEach((roomY) => {
+    if (floor === 3) {
+      // Study group layouts (Rearranged classroom desk matrices)
+      obstacles.push({ x: 40 + 50, y: roomY + 30, width: 44, height: 35, name: "Study Table Group A" });
+      obstacles.push({ x: 40 + 130, y: roomY + 80, width: 44, height: 35, name: "Study Table Group B" });
+      obstacles.push({ x: 40 + 210, y: roomY + 30, width: 44, height: 35, name: "Study Table Group C" });
+      obstacles.push({ x: 40 + 265, y: roomY + 45, width: 28, height: 40, name: "Teacher Table" });
+    } else if (floor === 1) {
+      // Random flipped barricade tables
+      obstacles.push({ x: 40 + 30, y: roomY + 20, width: 200, height: 14, name: "Flipped Desks Line" });
+      obstacles.push({ x: 40 + 100, y: roomY + 80, width: 14, height: 80, name: "Stacked Lockers Pile" });
+    } else {
+      // Floor 4 and 2 procedural grids with partially destroyed/disheveled items
+      for (let col = 0; col < 6; col++) {
+        for (let row = 0; row < 5; row++) {
+          if (floor === 4 && (col + row) % 3 === 0) continue; // broken desk gaps
+          if (floor === 2 && (col * row) % 2 === 0) continue; // scattered desk gaps
+
+          let offsetX = col * 34;
+          if (col >= 2) offsetX += 15;
+          if (col >= 4) offsetX += 15;
+          const offsetY = row * 21;
+
+          obstacles.push({
+            x: 40 + 18 + offsetX,
+            y: roomY + 16 + offsetY,
+            width: 16,
+            height: 12,
+            name: "Desk Unit",
+          });
+        }
+      }
+      obstacles.push({ x: 40 + 255, y: roomY + 35, width: 28, height: 50, name: "Teacher Table" });
+    }
+  });
+
+  // 2. Office & Toilet procedural layout variations
+  if (floor === 4 || floor === 2) {
+    // Office 1
+    obstacles.push({ x: 530 + 10, y: 170 + 15, width: 40, height: 45 });
+    obstacles.push({ x: 530 + 130, y: 170 + 30, width: 45, height: 45 });
+    // Office 2
+    obstacles.push({ x: 530 + 55, y: 310 + 70, width: 80, height: 90 });
+    obstacles.push({ x: 530 + 10, y: 310 + 10, width: 50, height: 40 });
+    obstacles.push({ x: 530 + 120, y: 310 + 200, width: 50, height: 40 });
+    // Toilets
+    obstacles.push({ x: 530 + 135, y: 720 + 20, width: 35, height: 110 });
+    obstacles.push({ x: 530 + 15, y: 720 + 25, width: 24, height: 65 });
+  } else if (floor === 3) {
+    // Office Lounge converted to mass storage unit grid
+    obstacles.push({ x: 530 + 20, y: 310 + 20, width: 140, height: 140, name: "Storage Box Pile" });
+    // Toilets
+    obstacles.push({ x: 530 + 135, y: 720 + 10, width: 35, height: 130 });
+    obstacles.push({ x: 530 + 15, y: 720 + 15, width: 24, height: 85 });
+  } else if (floor === 1) {
+    // Floor 1 Office 1: Completely barricaded
+    obstacles.push({ x: 530 + 5, y: 170 + 5, width: 170, height: 100, name: "Crates Blockade" });
+    // Office 2 debris grid
+    obstacles.push({ x: 530 + 5, y: 310 + 50, width: 120, height: 50 });
+    obstacles.push({ x: 530 + 60, y: 310 + 150, width: 120, height: 60 });
+    // Toilets
+    obstacles.push({ x: 530 + 130, y: 720 + 10, width: 35, height: 140 });
+  }
+
+  // 3. Hallway barriers & barricades (creating narrow passages)
+  if (floor === 4) {
+    obstacles.push({ x: 380, y: 250, width: 30, height: 45, name: "Fallen Vending Machine" });
+    obstacles.push({ x: 470, y: 550, width: 35, height: 35, name: "Debris pile 1" });
+    obstacles.push({ x: 502, y: 180, width: 8, height: 60 });
+    obstacles.push({ x: 502, y: 730, width: 8, height: 60 });
+  } else if (floor === 3) {
+    obstacles.push({ x: 430, y: 200, width: 35, height: 35, name: "Trash Cart" });
+    obstacles.push({ x: 420, y: 480, width: 45, height: 35, name: "Central Display Case" });
+    obstacles.push({ x: 440, y: 700, width: 35, height: 35, name: "Custodian Desk" });
+  } else if (floor === 2) {
+    obstacles.push({ x: 380, y: 150, width: 60, height: 15, name: "Pitted Desk Barrier A" });
+    obstacles.push({ x: 440, y: 380, width: 70, height: 15, name: "Pitted Desk Barrier B" });
+    obstacles.push({ x: 380, y: 620, width: 60, height: 15, name: "Pitted Desk Barrier C" });
+    obstacles.push({ x: 502, y: 730, width: 8, height: 60 });
+  } else if (floor === 1) {
+    obstacles.push({ x: 380, y: 160, width: 80, height: 20, name: "Barricade Alpha" });
+    obstacles.push({ x: 420, y: 350, width: 90, height: 20, name: "Barricade Beta" });
+    obstacles.push({ x: 380, y: 560, width: 80, height: 20, name: "Barricade Gamma" });
+    obstacles.push({ x: 420, y: 740, width: 90, height: 20, name: "Barricade Delta" });
+  }
+
+  return obstacles;
+}
 
 /**
  * Checks if a point is walkable for a character of given radius.
@@ -43,8 +154,9 @@ export function isLocationWalkable(x: number, y: number, r: number = 12): boolea
 
   if (!insideAnyRoom) return false;
 
-  // 3. Check if we overlap with any solid desks, tables, sinks, or cubicle obstacles
-  for (const obs of ALL_OBSTACLES) {
+  // 3. Check if we overlap with active procedural floor obstacles
+  const activeObstacles = getObstaclesForFloor(currentActiveFloor);
+  for (const obs of activeObstacles) {
     const obsMinX = obs.x - r;
     const obsMaxX = obs.x + obs.width + r;
     const obsMinY = obs.y - r;
