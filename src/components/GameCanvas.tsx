@@ -6,8 +6,9 @@
 import React, { useRef, useState, useEffect } from "react";
 import { CharacterClass, PlayerState, TobbyState, AIState, PuddleState, SoundWaveState, MedicineItemState, GameItemState, ItemType, DecoyCatnipState } from "../types";
 import { ROOMS, ALL_OBSTACLES, MAP_SVG, TOBBY_SVG, RUNNER_SVG, MARCUS_SVG, FAIBE_SVG, RUNNER_WALK1_SVG, RUNNER_WALK2_SVG, MARCUS_WALK1_SVG, MARCUS_WALK2_SVG, FAIBE_WALK1_SVG, FAIBE_WALK2_SVG, TOBBY_WALK1_SVG, TOBBY_WALK2_SVG } from "../data";
-import { isLocationWalkable, getRoomAt, checkLineOfSight, playScreamSound, playRamSound, playPacifySound, playDamageSound, playSoundWaveAttack, playFootstepSound, playActiveAbilityRunner, playMedicinePickupSound, setCurrentActiveFloor, getObstaclesForFloor } from "../utils";
-import { Shield, Sparkles, AlertTriangle, ArrowRight, Home, RefreshCw, Volume2, VolumeX, Eye, Flame, Heart, Zap } from "lucide-react";
+import { isLocationWalkable, getRoomAt, checkLineOfSight, playScreamSound, playRamSound, playPacifySound, playDamageSound, playSoundWaveAttack, playFootstepSound, playActiveAbilityRunner, playMedicinePickupSound, setCurrentActiveFloor, getObstaclesForFloor, generateFloor1Maze } from "../utils";
+import { Shield, Sparkles, AlertTriangle, ArrowRight, Home, RefreshCw, Volume2, VolumeX, Eye, Flame, Heart, Zap, BookOpen } from "lucide-react";
+import { SurvivalGuide } from "./SurvivalGuide";
 
 const jointAnchors = {
   RUNNER: { ll: "175 420", rl: "225 420", la: "150 260", ra: "250 260", t: "200 340", h: "200 195" },
@@ -78,6 +79,7 @@ export function GameCanvas({
   // Sound context levels
   const [muted, setMuted] = useState(false);
   const [screenDamageFlash, setScreenDamageFlash] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   // Reactive UI state pulled from requestAnimationFrame tick
   const [playerHp, setPlayerHp] = useState(1);
@@ -170,6 +172,9 @@ export function GameCanvas({
 
   const initializeLevel = () => {
     // Set the global active floor layout in utils
+    if (currentFloor === 1) {
+      generateFloor1Maze();
+    }
     setCurrentActiveFloor(currentFloor);
 
     // Save outgoing floor's state before switching!
@@ -596,8 +601,8 @@ export function GameCanvas({
     if (p.hp <= 0) return;
     if (meleeCdRef.current > 0) return;
 
-    meleeCdRef.current = 0.35; // 0.35s rapid cooldown
-    setMeleeCd(0.35);
+    meleeCdRef.current = 1.0; // 1.0 second cooldown for hitting for all characters
+    setMeleeCd(1.0);
 
     // Set visual state to render a neon slash arc
     setMeleeStrikeActive(true);
@@ -2290,7 +2295,7 @@ export function GameCanvas({
                 {/* Cooldown slide mask */}
                 <span
                   className="absolute bottom-0 left-0 right-0 bg-cyan-500/10 pointer-events-none transition-all"
-                  style={{ height: `${100 - (meleeCd / 0.35) * 100}%` }}
+                  style={{ height: `${100 - (meleeCd / 1.0) * 100}%` }}
                 />
               </div>
 
@@ -2301,7 +2306,7 @@ export function GameCanvas({
                   <span className="px-1.5 py-0.5 text-[9px] bg-cyan-900/60 text-cyan-300 border border-cyan-600/40 rounded uppercase font-bold tracking-wider">Key E / F / Click</span>
                 </div>
                 <div className="text-[10px] text-slate-400 mt-1.5 leading-normal">
-                  Punches Tobby backward dealing <span className="font-bold text-cyan-300">2 damage</span> on contact. Cooldown 0.35s.
+                  Punches Tobby backward dealing <span className="font-bold text-cyan-300">2 damage</span> on contact. Cooldown 1.0 seconds.
                 </div>
               </div>
             </div>
@@ -2317,11 +2322,21 @@ export function GameCanvas({
             <button
               onClick={() => setMuted(!muted)}
               id="game-mute-btn"
-              className="px-3 py-2.5 rounded-lg border border-slate-800 bg-slate-900/40 text-slate-300 hover:text-white hover:bg-slate-900 transition flex items-center gap-1 text-xs"
+              className="px-2.5 py-2.5 rounded-lg border border-slate-800 bg-slate-900/40 text-slate-300 hover:text-white hover:bg-slate-900 transition flex items-center gap-1 text-xs"
               title={muted ? "Unmute creep audio hum" : "Mute audio synthesizer feedback"}
             >
               {muted ? <VolumeX size={14} className="text-red-400" /> : <Volume2 size={14} className="text-emerald-400" />}
               <span>{muted ? "Muted" : "Sound"}</span>
+            </button>
+
+            <button
+              onClick={() => setIsGuideOpen(true)}
+              id="game-guide-btn"
+              className="px-2.5 py-2.5 rounded-lg border border-red-900 bg-red-950/45 text-red-450 hover:text-white hover:bg-red-900 transition flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider"
+              title="Open Survival Handbook Guide"
+            >
+              <BookOpen size={14} />
+              <span>GUIDE</span>
             </button>
 
             <button
@@ -2335,6 +2350,9 @@ export function GameCanvas({
           </div>
         </div>
       </div>
+
+      {/* Interactive Survival Guide Modal */}
+      <SurvivalGuide isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
     </div>
   );
 }

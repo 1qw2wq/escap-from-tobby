@@ -4,9 +4,160 @@
  */
 
 import { ROOMS, DOORWAYS, ALL_OBSTACLES } from "./data";
-import { GameObstacle } from "./types";
+import { GameObstacle, Doorway } from "./types";
 
 let currentActiveFloor = 5;
+
+// Extra horizontal and vertical connecting portals/doorways opened specifically on Floor 1
+export const FLOOR1_EXTRA_DOORWAYS: Doorway[] = [
+  { id: "C1_C2_internal", minX: 100, maxX: 140, minY: 195, maxY: 215 },
+  { id: "C2_C3_internal", minX: 220, maxX: 260, minY: 370, maxY: 390 },
+  { id: "C3_C4_internal", minX: 100, maxX: 140, minY: 545, maxY: 565 },
+  { id: "C4_C5_internal", minX: 220, maxX: 260, minY: 720, maxY: 740 },
+  { id: "Off1_Off2_internal", minX: 600, maxX: 640, minY: 290, maxY: 310 },
+  { id: "Off2_StairB_internal", minX: 600, maxX: 640, minY: 570, maxY: 590 },
+];
+
+let floor1MazeObstacles: GameObstacle[] = [];
+
+/**
+ * Procedural BFS Solver to guarantee that any generated Floor 1 layout is fully winnable.
+ */
+export function isFloor1Solvable(obstacles: GameObstacle[]): boolean {
+  const originalObstacles = floor1MazeObstacles;
+  floor1MazeObstacles = obstacles;
+
+  const startX = 600;
+  const startY = 645; // Entrance landing zone
+  const targetX = 600;
+  const targetY = 115; // Escape staircase
+
+  const cellSize = 30;
+  const visited = new Set<string>();
+  const queue: [number, number][] = [[startX, startY]];
+  visited.add(`${Math.floor(startX / cellSize)},${Math.floor(startY / cellSize)}`);
+
+  let reachedTarget = false;
+
+  while (queue.length > 0) {
+    const [cx, cy] = queue.shift()!;
+
+    if (Math.abs(cx - targetX) < 45 && Math.abs(cy - targetY) < 45) {
+      reachedTarget = true;
+      break;
+    }
+
+    const dirs = [
+      [0, cellSize],
+      [0, -cellSize],
+      [cellSize, 0],
+      [-cellSize, 0],
+    ];
+
+    for (const [dx, dy] of dirs) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+
+      if (nx < 40 || nx > 720 || ny < 40 || ny > 895) continue;
+
+      const key = `${Math.floor(nx / cellSize)},${Math.floor(ny / cellSize)}`;
+      if (!visited.has(key)) {
+        if (isLocationWalkable(nx, ny, 8)) { // check with a small virtual radius
+          visited.add(key);
+          queue.push([nx, ny]);
+        }
+      }
+    }
+  }
+
+  floor1MazeObstacles = originalObstacles;
+  return reachedTarget;
+}
+
+/**
+ * Generates a randomized solvable maze layout for Floor 1.
+ */
+export function generateFloor1Maze(): GameObstacle[] {
+  let attempts = 0;
+  while (attempts < 500) {
+    const list: GameObstacle[] = [];
+
+    // 1. Place randomized Classrooms piles
+    const classroomsY = [40, 215, 390, 565, 740];
+    classroomsY.forEach((roomY, idx) => {
+      const numObstacles = 2 + Math.floor(Math.random() * 2); // 2 or 3 piles
+      for (let k = 0; k < numObstacles; k++) {
+        // Random dimensions
+        const oWidth = 32 + Math.floor(Math.random() * 32);
+        const oHeight = 24 + Math.floor(Math.random() * 24);
+        // Random coords inside classroom
+        const oX = 40 + 20 + Math.floor(Math.random() * (320 - oWidth - 60));
+        const oY = roomY + 15 + Math.floor(Math.random() * (155 - oHeight - 30));
+
+        // Keep clear of the vertical internal doorways!
+        const isNearInternalDoor = 
+          (oX + oWidth > 80 && oX < 160 && (Math.abs(oY - roomY) < 25 || Math.abs(oY + oHeight - (roomY + 155)) < 25)) ||
+          (oX + oWidth > 200 && oX < 280 && (Math.abs(oY - roomY) < 25 || Math.abs(oY + oHeight - (roomY + 155)) < 25));
+
+        if (!isNearInternalDoor) {
+          list.push({
+            x: oX,
+            y: oY,
+            width: oWidth,
+            height: oHeight,
+            name: `Debris Pile C${idx+1} ${String.fromCharCode(65 + k)}`
+          });
+        }
+      }
+    });
+
+    // 2. Place randomized Office & Toilet blockages
+    list.push({ x: 530 + 15, y: 170 + 20, width: 45, height: 45, name: "Barricaded Desk" });
+    list.push({ x: 530 + 110, y: 170 + 60, width: 60, height: 40, name: "Office Box Pile" });
+
+    // Office 2: X [530, 720], Y [310, 570]
+    for (let k = 0; k < 3; k++) {
+      const oWidth = 45 + Math.floor(Math.random() * 25);
+      const oHeight = 35 + Math.floor(Math.random() * 25);
+      const oX = 530 + 15 + Math.floor(Math.random() * (190 - oWidth - 30));
+      const oY = 310 + 20 + Math.floor(Math.random() * (260 - oHeight - 40));
+      const isNearDoor = (oX + oWidth > 580 && oX < 660 && (Math.abs(oY - 310) < 30 || Math.abs(oY + oHeight - 570) < 30));
+      if (!isNearDoor) {
+        list.push({ x: oX, y: oY, width: oWidth, height: oHeight, name: `Office Debris ${k}` });
+      }
+    }
+
+    // Toilets
+    list.push({ x: 530 + 130, y: 720 + 15, width: 35, height: 120, name: "Broken Basin Partition" });
+    list.push({ x: 530 + 15, y: 720 + 35, width: 24, height: 75, name: "Smashed Washing Sinks" });
+
+    // 3. Place randomized Corridor Hallway barricades
+    const hallwayZones = [130, 270, 410, 550, 690, 810];
+    hallwayZones.forEach((barY, barIdx) => {
+      const rVal = Math.random();
+      if (rVal < 0.35) {
+        list.push({ x: 380, y: barY, width: 75, height: 22, name: `Hallway Left Block ${barIdx}` });
+      } else if (rVal < 0.70) {
+        list.push({ x: 435, y: barY, width: 75, height: 22, name: `Hallway Right Block ${barIdx}` });
+      } else {
+        // Total blockage forces the player to find an internal room routing!
+        list.push({ x: 380, y: barY, width: 130, height: 22, name: `Hallway Barricade Blockage ${barIdx}` });
+      }
+    });
+
+    // 4. Test solvability of this candidate layout
+    if (isFloor1Solvable(list)) {
+      floor1MazeObstacles = list;
+      return list;
+    }
+
+    attempts++;
+  }
+
+  // Fallback to static if somehow we couldn't find a solution in 500 tries
+  floor1MazeObstacles = ALL_OBSTACLES.filter(o => o.x < 380);
+  return floor1MazeObstacles;
+}
 
 /**
  * Updates the current floor context for dynamic obstacle detection.
@@ -23,27 +174,28 @@ export function getObstaclesForFloor(floor: number): GameObstacle[] {
     return ALL_OBSTACLES;
   }
 
+  if (floor === 1) {
+    if (floor1MazeObstacles.length === 0) {
+      generateFloor1Maze();
+    }
+    return floor1MazeObstacles;
+  }
+
   const obstacles: GameObstacle[] = [];
 
-  // 1. Classroom Desks specific to the floor
+  // Classroom desks for Floors 2, 3, 4
   const classroomsY = [40, 215, 390, 565, 740];
   classroomsY.forEach((roomY) => {
     if (floor === 3) {
-      // Study group layouts (Rearranged classroom desk matrices)
       obstacles.push({ x: 40 + 50, y: roomY + 30, width: 44, height: 35, name: "Study Table Group A" });
       obstacles.push({ x: 40 + 130, y: roomY + 80, width: 44, height: 35, name: "Study Table Group B" });
       obstacles.push({ x: 40 + 210, y: roomY + 30, width: 44, height: 35, name: "Study Table Group C" });
       obstacles.push({ x: 40 + 265, y: roomY + 45, width: 28, height: 40, name: "Teacher Table" });
-    } else if (floor === 1) {
-      // Random flipped barricade tables
-      obstacles.push({ x: 40 + 30, y: roomY + 20, width: 200, height: 14, name: "Flipped Desks Line" });
-      obstacles.push({ x: 40 + 100, y: roomY + 80, width: 14, height: 80, name: "Stacked Lockers Pile" });
     } else {
-      // Floor 4 and 2 procedural grids with partially destroyed/disheveled items
       for (let col = 0; col < 6; col++) {
         for (let row = 0; row < 5; row++) {
-          if (floor === 4 && (col + row) % 3 === 0) continue; // broken desk gaps
-          if (floor === 2 && (col * row) % 2 === 0) continue; // scattered desk gaps
+          if (floor === 4 && (col + row) % 3 === 0) continue;
+          if (floor === 2 && (col * row) % 2 === 0) continue;
 
           let offsetX = col * 34;
           if (col >= 2) offsetX += 15;
@@ -63,35 +215,22 @@ export function getObstaclesForFloor(floor: number): GameObstacle[] {
     }
   });
 
-  // 2. Office & Toilet procedural layout variations
+  // Office & Toilet on Floor 2, 3, 4
   if (floor === 4 || floor === 2) {
-    // Office 1
     obstacles.push({ x: 530 + 10, y: 170 + 15, width: 40, height: 45 });
     obstacles.push({ x: 530 + 130, y: 170 + 30, width: 45, height: 45 });
-    // Office 2
     obstacles.push({ x: 530 + 55, y: 310 + 70, width: 80, height: 90 });
     obstacles.push({ x: 530 + 10, y: 310 + 10, width: 50, height: 40 });
     obstacles.push({ x: 530 + 120, y: 310 + 200, width: 50, height: 40 });
-    // Toilets
     obstacles.push({ x: 530 + 135, y: 720 + 20, width: 35, height: 110 });
     obstacles.push({ x: 530 + 15, y: 720 + 25, width: 24, height: 65 });
   } else if (floor === 3) {
-    // Office Lounge converted to mass storage unit grid
     obstacles.push({ x: 530 + 20, y: 310 + 20, width: 140, height: 140, name: "Storage Box Pile" });
-    // Toilets
     obstacles.push({ x: 530 + 135, y: 720 + 10, width: 35, height: 130 });
     obstacles.push({ x: 530 + 15, y: 720 + 15, width: 24, height: 85 });
-  } else if (floor === 1) {
-    // Floor 1 Office 1: Completely barricaded
-    obstacles.push({ x: 530 + 5, y: 170 + 5, width: 170, height: 100, name: "Crates Blockade" });
-    // Office 2 debris grid
-    obstacles.push({ x: 530 + 5, y: 310 + 50, width: 120, height: 50 });
-    obstacles.push({ x: 530 + 60, y: 310 + 150, width: 120, height: 60 });
-    // Toilets
-    obstacles.push({ x: 530 + 130, y: 720 + 10, width: 35, height: 140 });
   }
 
-  // 3. Hallway barriers & barricades (creating narrow passages)
+  // Hallway barriers for Floor 2, 3, 4
   if (floor === 4) {
     obstacles.push({ x: 380, y: 250, width: 30, height: 45, name: "Fallen Vending Machine" });
     obstacles.push({ x: 470, y: 550, width: 35, height: 35, name: "Debris pile 1" });
@@ -106,11 +245,6 @@ export function getObstaclesForFloor(floor: number): GameObstacle[] {
     obstacles.push({ x: 440, y: 380, width: 70, height: 15, name: "Pitted Desk Barrier B" });
     obstacles.push({ x: 380, y: 620, width: 60, height: 15, name: "Pitted Desk Barrier C" });
     obstacles.push({ x: 502, y: 730, width: 8, height: 60 });
-  } else if (floor === 1) {
-    obstacles.push({ x: 380, y: 160, width: 80, height: 20, name: "Barricade Alpha" });
-    obstacles.push({ x: 420, y: 350, width: 90, height: 20, name: "Barricade Beta" });
-    obstacles.push({ x: 380, y: 560, width: 80, height: 20, name: "Barricade Gamma" });
-    obstacles.push({ x: 420, y: 740, width: 90, height: 20, name: "Barricade Delta" });
   }
 
   return obstacles;
@@ -121,6 +255,20 @@ export function getObstaclesForFloor(floor: number): GameObstacle[] {
  * Handles room constraints, doorways, and solid furniture obstacles.
  */
 export function isLocationWalkable(x: number, y: number, r: number = 12): boolean {
+  // If we are on Floor 1, check additional internal connecting doorways first
+  if (currentActiveFloor === 1) {
+    for (const d of FLOOR1_EXTRA_DOORWAYS) {
+      const minD_X = d.minX - r;
+      const maxD_X = d.maxX + r;
+      const minD_Y = d.minY - r;
+      const maxD_Y = d.maxY + r;
+
+      if (x >= minD_X && x <= maxD_X && y >= minD_Y && y <= maxD_Y) {
+        return true;
+      }
+    }
+  }
+
   // 1. Check if we are inside any doorway (using expanded horizontal boundaries to permit smooth travel)
   for (const d of DOORWAYS) {
     const isClassroomDoor = d.minX === 360; // connects left to hallway

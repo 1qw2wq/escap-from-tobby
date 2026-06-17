@@ -3,18 +3,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from "react";
+import React, { useState } from "react";
 import { CharacterClass } from "../types";
 import { MARCUS_SVG, FAIBE_SVG, RUNNER_SVG } from "../data";
-import { Skull, ShieldAlert, Zap, RefreshCw, Sparkles, HelpCircle } from "lucide-react";
+import { Skull, ShieldAlert, Zap, RefreshCw, Sparkles, HelpCircle, BookOpen } from "lucide-react";
 import { playMenuClickSound } from "../utils";
+import { SurvivalGuide } from "./SurvivalGuide";
 
 interface MenuProps {
   onStartGame: (selectedClass: CharacterClass) => void;
 }
 
 export function Menu({ onStartGame }: MenuProps) {
-  const [selected, setSelected] = React.useState<CharacterClass>(CharacterClass.RUNNER);
+  const [selected, setSelected] = useState<CharacterClass>(CharacterClass.RUNNER);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   const characters = [
     {
@@ -183,6 +185,16 @@ export function Menu({ onStartGame }: MenuProps) {
           <p>• Avoid <span className="text-red-400">30 Tobby clones</span> roaming the modular floors.</p>
           <p>• Reach <span className="text-emerald-400">Staircase A</span> (Top-Right) to ascend floors (5 levels to escape).</p>
           <p>• Use <kbd className="px-1 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-200">WASD</kbd> or <kbd className="px-1 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-200">Arrows</kbd> to crawl. <kbd className="px-1 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-200">SPACE</kbd> triggers Ability.</p>
+          <button
+            onClick={() => {
+              playMenuClickSound();
+              setIsGuideOpen(true);
+            }}
+            id="menu-open-guide-btn"
+            className="mt-2.5 w-full py-1.5 px-3 rounded-lg bg-red-950/40 hover:bg-red-900/60 transition-all border border-red-900/40 text-[10px] text-red-450 hover:text-white flex items-center justify-center gap-1.5 font-bold uppercase tracking-wider"
+          >
+            <BookOpen size={12} /> OPEN FULL SURVIVAL HANDBOOK
+          </button>
         </div>
 
         {/* Start trigger */}
@@ -194,6 +206,9 @@ export function Menu({ onStartGame }: MenuProps) {
           DEPLOY STUDENT ESCAPE
         </button>
       </footer>
+
+      {/* Interactive Survival Guide Modal */}
+      <SurvivalGuide isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
     </div>
   );
 }
