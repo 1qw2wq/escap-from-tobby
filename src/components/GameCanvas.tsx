@@ -4,6 +4,7 @@
  */
 
 import React, { useRef, useState, useEffect } from "react";
+import * as THREE from "three";
 import { CharacterClass, PlayerState, TobbyState, AIState, PuddleState, SoundWaveState, MedicineItemState, GameItemState, ItemType, DecoyCatnipState } from "../types";
 import { ROOMS, ALL_OBSTACLES, MAP_SVG, TOBBY_SVG, RUNNER_SVG, MARCUS_SVG, FAIBE_SVG, RUNNER_WALK1_SVG, RUNNER_WALK2_SVG, MARCUS_WALK1_SVG, MARCUS_WALK2_SVG, FAIBE_WALK1_SVG, FAIBE_WALK2_SVG, TOBBY_WALK1_SVG, TOBBY_WALK2_SVG } from "../data";
 import { isLocationWalkable, getRoomAt, checkLineOfSight, playScreamSound, playRamSound, playPacifySound, playDamageSound, playSoundWaveAttack, playFootstepSound, playActiveAbilityRunner, playMedicinePickupSound, setCurrentActiveFloor, getObstaclesForFloor, generateFloor1Maze } from "../utils";
@@ -75,6 +76,22 @@ export function GameCanvas({
   onResetFloor5,
 }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvas3DRef = useRef<HTMLCanvasElement | null>(null);
+
+  const [is3DMode, setIs3DMode] = useState(true);
+
+  // Three.js Engine WebGL Refs
+  const threeRendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const threeSceneRef = useRef<THREE.Scene | null>(null);
+  const threeCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const playerMeshRef = useRef<THREE.Group | null>(null);
+  const playerLightRef = useRef<THREE.SpotLight | null>(null);
+  const obstaclesGroupRef = useRef<THREE.Group | null>(null);
+  const tobbysGroupRef = useRef<THREE.Group | null>(null);
+  const itemsGroupRef = useRef<THREE.Group | null>(null);
+  const puddlesGroupRef = useRef<THREE.Group | null>(null);
+  const decoysGroupRef = useRef<THREE.Group | null>(null);
+  const soundwavesGroupRef = useRef<THREE.Group | null>(null);
 
   // Sound context levels
   const [muted, setMuted] = useState(false);
@@ -412,6 +429,29 @@ export function GameCanvas({
     setEmpActiveTime(empActiveTimeRef.current);
 
     previousFloorRef.current = currentFloor;
+
+    // Synchronize Three.js scene structures
+    setTimeout(() => {
+      if (threeSceneRef.current) {
+        rebuildObstacles3D();
+        if (playerMeshRef.current && threeSceneRef.current) {
+          threeSceneRef.current.remove(playerMeshRef.current);
+          const playerGroup = createPlayer3DMesh();
+          threeSceneRef.current.add(playerGroup);
+          playerMeshRef.current = playerGroup;
+
+          const flashlight = new THREE.SpotLight(0xfff6e0, 16.0, 320, Math.PI / 4, 0.4, 0.5);
+          flashlight.position.set(0, 15, 0);
+          flashlight.castShadow = true;
+          playerGroup.add(flashlight);
+          playerLightRef.current = flashlight;
+
+          const lightTarget = new THREE.Object3D();
+          playerGroup.add(lightTarget);
+          flashlight.target = lightTarget;
+        }
+      }
+    }, 50);
   };
 
   // 1. Level Initialization on Mount or Floor Change
@@ -527,7 +567,7 @@ export function GameCanvas({
 
   // 3b. Mouse and Touch pointer control listeners
   useEffect(() => {
-    const canvas = canvasRef.current;
+    const canvas = is3DMode ? canvas3DRef.current : canvasRef.current;
     if (!canvas) return;
 
     const getCanvasCoords = (clientX: number, clientY: number) => {
@@ -593,7 +633,7 @@ export function GameCanvas({
       canvas.removeEventListener("touchmove", handleTouchMove);
       canvas.removeEventListener("touchend", handleTouchEnd);
     };
-  }, []);
+  }, [is3DMode]);
 
   // 4. Trigger Melee Hit Active Skill (Punch/Strike)
   const triggerMeleeStrike = () => {
@@ -829,7 +869,11 @@ export function GameCanvas({
       lastTimeRef.current = timestamp;
 
       updatePhysics(dt);
-      drawGraphics();
+      if (is3DMode) {
+        renderThree();
+      } else {
+        drawGraphics();
+      }
 
       animationFrameIdRef.current = requestAnimationFrame(tick);
     };
@@ -840,7 +884,7 @@ export function GameCanvas({
         cancelAnimationFrame(animationFrameIdRef.current);
       }
     };
-  }, [muted]);
+  }, [muted, is3DMode]);
 
   // Core physics logic
   const updatePhysics = (dt: number) => {
@@ -1460,6 +1504,575 @@ export function GameCanvas({
     while (angle < -Math.PI) angle += Math.PI * 2;
     while (angle > Math.PI) angle -= Math.PI * 2;
     return angle;
+  };
+
+  // --- THREE.JS 3D VIEWPORT RENDERING ENGINE ---
+  const createPlayer3DMesh = (): THREE.Group => {
+    const group = new THREE.Group();
+
+    let torsoColor = 0x3b82f6; // Blue for student runner
+    let headColor = 0xfcd8c4;
+    let isHeavy = false;
+    let isMagical = false;
+
+    if (characterClass === CharacterClass.MARCUS) {
+      torsoColor = 0x15803d; // Green vest
+      isHeavy = true;
+    } else if (characterClass === CharacterClass.FAIBE) {
+      torsoColor = 0xbe123c; // Crimson blouse
+      isMagical = true;
+    }
+
+    // Glowing propulsion ring under player hover boots
+    const ringGeo = new THREE.RingGeometry(11, 13, 16);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: torsoColor,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.8,
+    });
+    const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+    ringMesh.rotation.x = Math.PI / 2;
+    ringMesh.position.y = 1;
+    group.add(ringMesh);
+
+    // Torso capsule shape
+    const torsoGeo = isHeavy 
+      ? new THREE.BoxGeometry(22, 28, 16) 
+      : new THREE.CylinderGeometry(8, 11, 24, 16);
+    const torsoMat = new THREE.MeshStandardMaterial({
+      color: torsoColor,
+      roughness: 0.2,
+      metalness: 0.5,
+    });
+    const torsoMesh = new THREE.Mesh(torsoGeo, torsoMat);
+    torsoMesh.position.y = 15;
+    group.add(torsoMesh);
+
+    // Head sphere
+    const headGeo = new THREE.SphereGeometry(7.5, 16, 16);
+    const headMat = new THREE.MeshStandardMaterial({
+      color: headColor,
+      roughness: 0.3,
+    });
+    const headMesh = new THREE.Mesh(headGeo, headMat);
+    headMesh.position.y = 31;
+    group.add(headMesh);
+
+    // Visor glows with futuristic HUD neon color
+    const eyeGeo = new THREE.BoxGeometry(10, 2.5, 2);
+    const eyeMat = new THREE.MeshBasicMaterial({
+      color: isMagical ? 0xd8b4fe : (isHeavy ? 0xa7f3d0 : 0x93c5fd),
+    });
+    const eyeMesh = new THREE.Mesh(eyeGeo, eyeMat);
+    eyeMesh.position.set(0, 31.5, 6.5);
+    group.add(eyeMesh);
+
+    if (isHeavy) {
+      const padGeo = new THREE.BoxGeometry(7, 7, 12);
+      const padMat = new THREE.MeshStandardMaterial({ color: 0x166534, metalness: 0.7 });
+      const leftPad = new THREE.Mesh(padGeo, padMat);
+      leftPad.position.set(-14, 25, 0);
+      const rightPad = leftPad.clone();
+      rightPad.position.x = 14;
+      group.add(leftPad);
+      group.add(rightPad);
+    } else if (isMagical) {
+      const haloGeo = new THREE.TorusGeometry(11, 1.2, 8, 24);
+      const haloMat = new THREE.MeshBasicMaterial({ color: 0xa855f7, transparent: true, opacity: 0.7 });
+      const halo = new THREE.Mesh(haloGeo, haloMat);
+      halo.rotation.x = Math.PI / 2;
+      halo.position.y = 31;
+      group.add(halo);
+    }
+
+    return group;
+  };
+
+  const createTobby3DMesh = (): THREE.Group => {
+    const group = new THREE.Group();
+
+    // Purple cyber-coat body
+    const torsoGeo = new THREE.CylinderGeometry(8, 11, 26, 16);
+    const torsoMat = new THREE.MeshStandardMaterial({
+      color: 0x2e1065, 
+      roughness: 0.1,
+      metalness: 0.8,
+    });
+    const torsoMesh = new THREE.Mesh(torsoGeo, torsoMat);
+    torsoMesh.position.y = 16;
+    group.add(torsoMesh);
+
+    // Tobby's Signature Red Necktie
+    const tieGeo = new THREE.ConeGeometry(2.5, 12, 4);
+    const tieMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.5 });
+    const tieMesh = new THREE.Mesh(tieGeo, tieMat);
+    tieMesh.position.set(0, 20, 10);
+    tieMesh.rotation.x = -Math.PI / 12;
+    group.add(tieMesh);
+
+    // Head
+    const headGeo = new THREE.SphereGeometry(9, 16, 16);
+    const headMat = new THREE.MeshStandardMaterial({
+      color: 0xe5bfa1,
+      roughness: 0.4,
+    });
+    const headMesh = new THREE.Mesh(headGeo, headMat);
+    headMesh.position.y = 33;
+    group.add(headMesh);
+
+    // Tobby's Iconic Circular Spectacles with Red Glowing Threat Lenses
+    const glassesGroup = new THREE.Group();
+    const frameGeo = new THREE.TorusGeometry(3.8, 0.8, 6, 16);
+    const frameMat = new THREE.MeshBasicMaterial({ color: 0x111827 });
+    
+    const leftGlass = new THREE.Mesh(frameGeo, frameMat);
+    leftGlass.position.set(-4.5, 0, 0);
+    
+    const rightGlass = new THREE.Mesh(frameGeo, frameMat);
+    rightGlass.position.set(4.5, 0, 0);
+
+    const lensGeo = new THREE.SphereGeometry(3.2, 8, 8);
+    const lensMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+    const leftLens = new THREE.Mesh(lensGeo, lensMat);
+    leftLens.position.set(-4.5, 0, 1.5);
+    const rightLens = leftLens.clone();
+    rightLens.position.x = 4.5;
+
+    glassesGroup.add(leftGlass);
+    glassesGroup.add(rightGlass);
+    glassesGroup.add(leftLens);
+    glassesGroup.add(rightLens);
+    glassesGroup.position.set(0, 34, 8);
+    group.add(glassesGroup);
+
+    // Hair
+    const hairGeo = new THREE.SphereGeometry(9.6, 8, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+    const hairMat = new THREE.MeshStandardMaterial({ color: 0x1c1917, roughness: 0.9 });
+    const hairMesh = new THREE.Mesh(hairGeo, hairMat);
+    hairMesh.position.y = 34;
+    group.add(hairMesh);
+
+    return group;
+  };
+
+  const initThree = () => {
+    const canvas = canvas3DRef.current;
+    if (!canvas) return;
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x020617, 0.0016);
+    threeSceneRef.current = scene;
+
+    const camera = new THREE.PerspectiveCamera(45, canvas.width / canvas.height, 1, 3000);
+    camera.position.set(450, 320, 645);
+    threeCameraRef.current = camera;
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas: canvas,
+      antialias: true,
+      alpha: false,
+    });
+    renderer.setSize(canvas.width, canvas.height);
+    renderer.shadowMap.enabled = true;
+    threeRendererRef.current = renderer;
+
+    const ambientLight = new THREE.AmbientLight(0x0a1128, 0.75);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0x38bdf8, 0.45);
+    dirLight.position.set(450, 500, 500);
+    scene.add(dirLight);
+
+    const floorGeo = new THREE.PlaneGeometry(900, 1000);
+    const cache = imagesCachedRef.current;
+    if (cache && cache.map) {
+      const texCanvas = document.createElement("canvas");
+      texCanvas.width = 1800;
+      texCanvas.height = 2000;
+      const tCtx = texCanvas.getContext("2d");
+      if (tCtx) {
+        tCtx.fillStyle = "#020617";
+        tCtx.fillRect(0, 0, 1800, 2000);
+        tCtx.drawImage(cache.map, 0, 0, 1800, 2000);
+      }
+      const floorTex = new THREE.CanvasTexture(texCanvas);
+      const floorMat = new THREE.MeshStandardMaterial({
+        map: floorTex,
+        roughness: 0.35,
+        metalness: 0.35,
+      });
+      const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+      floorMesh.rotation.x = -Math.PI / 2;
+      floorMesh.position.set(450, 0, 500);
+      scene.add(floorMesh);
+    }
+
+    const obstaclesGroup = new THREE.Group();
+    scene.add(obstaclesGroup);
+    obstaclesGroupRef.current = obstaclesGroup;
+
+    const tobbysGroup = new THREE.Group();
+    scene.add(tobbysGroup);
+    tobbysGroupRef.current = tobbysGroup;
+
+    const itemsGroup = new THREE.Group();
+    scene.add(itemsGroup);
+    itemsGroupRef.current = itemsGroup;
+
+    const puddlesGroup = new THREE.Group();
+    scene.add(puddlesGroup);
+    puddlesGroupRef.current = puddlesGroup;
+
+    const decoysGroup = new THREE.Group();
+    scene.add(decoysGroup);
+    decoysGroupRef.current = decoysGroup;
+
+    const soundwavesGroup = new THREE.Group();
+    scene.add(soundwavesGroup);
+    soundwavesGroupRef.current = soundwavesGroup;
+
+    const playerGroup = createPlayer3DMesh();
+    scene.add(playerGroup);
+    playerMeshRef.current = playerGroup;
+
+    const flashlight = new THREE.SpotLight(0xfff6e0, 16.0, 320, Math.PI / 4, 0.4, 0.5);
+    flashlight.position.set(0, 15, 0);
+    flashlight.castShadow = true;
+    playerGroup.add(flashlight);
+    playerLightRef.current = flashlight;
+
+    const lightTarget = new THREE.Object3D();
+    playerGroup.add(lightTarget);
+    flashlight.target = lightTarget;
+  };
+
+  const checkAndInitThree = () => {
+    const canvas = canvas3DRef.current;
+    if (!canvas) return;
+
+    if (threeRendererRef.current) {
+      return;
+    }
+
+    try {
+      initThree();
+      rebuildObstacles3D();
+    } catch (e) {
+      console.error("Three.js initialization failed:", e);
+    }
+  };
+
+  const rebuildObstacles3D = () => {
+    const obstaclesGroup = obstaclesGroupRef.current;
+    if (!obstaclesGroup) return;
+
+    while (obstaclesGroup.children.length > 0) {
+      obstaclesGroup.remove(obstaclesGroup.children[0]);
+    }
+
+    const activeObs = getObstaclesForFloor(currentFloor);
+    activeObs.forEach((obs) => {
+      const width = obs.width;
+      const height = obs.height;
+      
+      const boxGeo = new THREE.BoxGeometry(width, 24, height);
+      
+      let color = 0x1e293b; 
+      let metalness = 0.3;
+      let roughness = 0.5;
+      let isHazard = false;
+
+      if (
+        obs.name?.includes("Barricade") ||
+        obs.name?.includes("Blockade") ||
+        obs.name?.includes("Debris") ||
+        obs.name?.includes("Flipped") ||
+        obs.name?.includes("Pile")
+      ) {
+        color = 0x111827; 
+        metalness = 0.8;
+        roughness = 0.2;
+        isHazard = true;
+      } else if (obs.name?.includes("Study")) {
+        color = 0x0f172a; 
+        metalness = 0.5;
+        roughness = 0.1;
+      }
+
+      const boxMat = new THREE.MeshStandardMaterial({
+        color: color,
+        metalness: metalness,
+        roughness: roughness,
+      });
+
+      const boxMesh = new THREE.Mesh(boxGeo, boxMat);
+      boxMesh.position.set(obs.x + width / 2, 12, obs.y + height / 2);
+      boxMesh.receiveShadow = true;
+      boxMesh.castShadow = true;
+      obstaclesGroup.add(boxMesh);
+
+      if (isHazard) {
+        const barGeo = new THREE.BoxGeometry(width - 4, 2, 2);
+        const barMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+        const warningBar = new THREE.Mesh(barGeo, barMat);
+        warningBar.position.set(0, 12.2, 0);
+        boxMesh.add(warningBar);
+      } else {
+        const barGeo = new THREE.BoxGeometry(width - 2, 1, height - 2);
+        const barMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.4 });
+        const cyanTop = new THREE.Mesh(barGeo, barMat);
+        cyanTop.position.set(0, 12.1, 0);
+        boxMesh.add(cyanTop);
+      }
+    });
+  };
+
+  const updateThreeEntities = () => {
+    const scene = threeSceneRef.current;
+    if (!scene) return;
+
+    const p = playerRef.current;
+    const playerMesh = playerMeshRef.current;
+    if (playerMesh) {
+      playerMesh.position.set(p.x, 0, p.y);
+      playerMesh.rotation.y = -p.angle;
+
+      const isSpeeding = p.isBurstActive || (p.hyperChargeTime && p.hyperChargeTime > 0);
+      const ring = playerMesh.children[0] as THREE.Mesh;
+      if (ring && ring.material) {
+        (ring.material as THREE.MeshBasicMaterial).color.setHex(isSpeeding ? 0xf59e0b : (characterClass === CharacterClass.RUNNER ? 0x3b82f6 : (characterClass === CharacterClass.MARCUS ? 0x15803d : 0xbe123c)));
+      }
+
+      const camera = threeCameraRef.current;
+      if (camera) {
+        const targetCamX = p.x;
+        const targetCamZ = p.y + 195; 
+        const targetCamY = 320; 
+
+        camera.position.x += (targetCamX - camera.position.x) * 0.12;
+        camera.position.z += (targetCamZ - camera.position.z) * 0.12;
+        camera.position.y += (targetCamY - camera.position.y) * 0.12;
+        camera.lookAt(p.x, 0, p.y);
+      }
+
+      const flashlight = playerLightRef.current;
+      if (flashlight) {
+        const targetObj = flashlight.target;
+        targetObj.position.set(Math.cos(p.angle) * 100, -15, Math.sin(p.angle) * 100);
+      }
+    }
+
+    const tobbysGroup = tobbysGroupRef.current;
+    if (tobbysGroup) {
+      const tobbys = tobbysRef.current;
+      
+      while (tobbysGroup.children.length < tobbys.length) {
+        const tMesh = createTobby3DMesh();
+        
+        const spot = new THREE.SpotLight(0xff1111, 15.0, 240, Math.PI / 4.5, 0.4, 0.5);
+        spot.position.set(0, 32, 8);
+        spot.castShadow = true;
+        tMesh.add(spot);
+
+        const targetObj = new THREE.Object3D();
+        tMesh.add(targetObj);
+        spot.target = targetObj;
+
+        tobbysGroup.add(tMesh);
+      }
+      while (tobbysGroup.children.length > tobbys.length) {
+        tobbysGroup.remove(tobbysGroup.children[tobbysGroup.children.length - 1]);
+      }
+
+      tobbys.forEach((t, idx) => {
+        const tMesh = tobbysGroup.children[idx] as THREE.Group;
+        if (tMesh) {
+          tMesh.position.set(t.x, 0, t.y);
+          tMesh.rotation.y = -t.angle;
+
+          const bobSpeed = t.aiState === AIState.CHASING ? 15 : 6;
+          tMesh.position.y = Math.abs(Math.sin(Date.now() / 1000 * bobSpeed)) * 1.8;
+
+          const spot = tMesh.children[tMesh.children.length - 2] as THREE.SpotLight;
+          if (spot) {
+            const targetObj = tMesh.children[tMesh.children.length - 1];
+            targetObj.position.set(Math.cos(t.angle) * 120, -32, Math.sin(t.angle) * 120);
+            
+            if (t.aiState === AIState.CHASING) {
+              spot.color.setHex(0xff0000);
+              spot.intensity = 25.0;
+            } else {
+              spot.color.setHex(0xffaa44); 
+              spot.intensity = 10.0;
+            }
+
+            const isFrozen = (empActiveTimeRef.current > 0) || (characterClass === CharacterClass.FAIBE && playerRef.current.isPacifying);
+            if (isFrozen) {
+              spot.intensity = 0;
+            }
+          }
+        }
+      });
+    }
+
+    const itemsGroup = itemsGroupRef.current;
+    if (itemsGroup) {
+      while (itemsGroup.children.length > 0) {
+        itemsGroup.remove(itemsGroup.children[0]);
+      }
+
+      medicinesRef.current.forEach((item) => {
+        if (item.pickedUp) return;
+
+        const itemMesh = new THREE.Group();
+        itemMesh.position.set(item.x, 0, item.y);
+
+        const floatY = 4 + Math.sin(Date.now() / 200) * 1.5;
+        const rotateAngle = Date.now() / 1000;
+
+        if (item.type === ItemType.MEDICINE) {
+          const caseGeo = new THREE.BoxGeometry(11, 7, 4);
+          const caseMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.6 });
+          const suitcase = new THREE.Mesh(caseGeo, caseMat);
+          suitcase.position.y = floatY;
+          suitcase.rotation.x = Math.PI / 6;
+          suitcase.rotation.y = rotateAngle;
+          itemMesh.add(suitcase);
+
+          const crossH = new THREE.Mesh(new THREE.BoxGeometry(5, 1.2, 1.2), new THREE.MeshBasicMaterial({ color: 0x22c55e }));
+          const crossV = new THREE.Mesh(new THREE.BoxGeometry(1.2, 5, 1.2), new THREE.MeshBasicMaterial({ color: 0x22c55e }));
+          crossH.position.set(0, floatY + 7, 0);
+          crossV.position.set(0, floatY + 7, 0);
+          itemMesh.add(crossH);
+          itemMesh.add(crossV);
+        } else if (item.type === ItemType.CATNIP) {
+          const pouchGeo = new THREE.SphereGeometry(4.5, 8, 8);
+          const pouchMat = new THREE.MeshStandardMaterial({ color: 0xc084fc, roughness: 0.8 });
+          const pouch = new THREE.Mesh(pouchGeo, pouchMat);
+          pouch.position.y = floatY;
+          pouch.rotation.y = rotateAngle;
+          itemMesh.add(pouch);
+          
+          const ringGeo = new THREE.RingGeometry(5, 6, 8);
+          const ringMat = new THREE.MeshBasicMaterial({ color: 0xa855f7, side: THREE.DoubleSide });
+          const ring = new THREE.Mesh(ringGeo, ringMat);
+          ring.rotation.x = Math.PI/2;
+          ring.position.y = floatY + 1.5;
+          itemMesh.add(ring);
+        } else if (item.type === ItemType.ENERGY_CAN) {
+          const canGeo = new THREE.CylinderGeometry(3.2, 3.2, 8, 12);
+          const canMat = new THREE.MeshStandardMaterial({ color: 0xf97316, metalness: 0.8, roughness: 0.1 });
+          const can = new THREE.Mesh(canGeo, canMat);
+          can.position.y = floatY;
+          can.rotation.y = rotateAngle;
+          can.rotation.x = Math.PI / 8;
+          itemMesh.add(can);
+        } else if (item.type === ItemType.EMP) {
+          const coreGeo = new THREE.OctahedronGeometry(5, 0);
+          const coreMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4, wireframe: true });
+          const core = new THREE.Mesh(coreGeo, coreMat);
+          core.position.y = floatY;
+          core.rotation.set(rotateAngle, rotateAngle, 0);
+          itemMesh.add(core);
+
+          const coreInner = new THREE.Mesh(new THREE.SphereGeometry(2.5, 8, 8), new THREE.MeshBasicMaterial({ color: 0x22d3ee }));
+          coreInner.position.y = floatY;
+          itemMesh.add(coreInner);
+        }
+
+        itemsGroup.add(itemMesh);
+      });
+    }
+
+    const puddlesGroup = puddlesGroupRef.current;
+    if (puddlesGroup) {
+      while (puddlesGroup.children.length > 0) {
+        puddlesGroup.remove(puddlesGroup.children[0]);
+      }
+
+      puddlesRef.current.forEach((pud) => {
+        const geo = new THREE.CylinderGeometry(pud.radius, pud.radius, 0.4, 16);
+        const mat = new THREE.MeshStandardMaterial({
+          color: 0x0e7490,
+          transparent: true,
+          opacity: 0.65,
+          roughness: 0.1,
+          metalness: 0.8,
+        });
+        const puddleMesh = new THREE.Mesh(geo, mat);
+        puddleMesh.position.set(pud.x, 0.2, pud.y);
+        puddlesGroup.add(puddleMesh);
+
+        const ringGeo = new THREE.RingGeometry(pud.radius - 1, pud.radius + 1, 16);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0x22d3ee, side: THREE.DoubleSide, transparent: true, opacity: 0.4 });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = 0.3;
+        puddleMesh.add(ring);
+      });
+    }
+
+    const decoysGroup = decoysGroupRef.current;
+    if (decoysGroup) {
+      while (decoysGroup.children.length > 0) {
+        decoysGroup.remove(decoysGroup.children[0]);
+      }
+
+      decoysRef.current.forEach((dec) => {
+        const geo = new THREE.SphereGeometry(6, 12, 12);
+        const mat = new THREE.MeshStandardMaterial({ color: 0xa855f7, roughness: 0.6, metalness: 0.5 });
+        const decoyMesh = new THREE.Mesh(geo, mat);
+        decoyMesh.position.set(dec.x, 6, dec.y);
+        decoyMesh.rotation.y = Date.now() / 250;
+        decoysGroup.add(decoyMesh);
+
+        const waveRadius = ((Date.now() / 12) % 180);
+        const ringGeo = new THREE.RingGeometry(waveRadius - 2, waveRadius + 2, 24);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: 0xd8b4fe,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: Math.max(0, 1 - waveRadius / 180),
+        });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = -5.8;
+        decoyMesh.add(ring);
+      });
+    }
+
+    const soundwavesGroup = soundwavesGroupRef.current;
+    if (soundwavesGroup) {
+      while (soundwavesGroup.children.length > 0) {
+        soundwavesGroup.remove(soundwavesGroup.children[0]);
+      }
+
+      soundWavesRef.current.forEach((sw) => {
+        const tRatio = 1 - (sw.timeLeft / 0.6); 
+        const curRadius = sw.radius + tRatio * (sw.maxRadius - sw.radius);
+
+        const ringGeo = new THREE.RingGeometry(curRadius - 3, curRadius + 1, 32);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: 0xef4444, 
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: Math.max(0, 1 - tRatio) * 0.9,
+        });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(sw.x, 0.8, sw.y);
+        soundwavesGroup.add(ring);
+      });
+    }
+  };
+
+  const renderThree = () => {
+    checkAndInitThree();
+    updateThreeEntities();
+    if (threeRendererRef.current && threeSceneRef.current && threeCameraRef.current) {
+      threeRendererRef.current.render(threeSceneRef.current, threeCameraRef.current);
+    }
   };
 
   // --- RENDERING PIPELINE ---
@@ -2098,7 +2711,26 @@ export function GameCanvas({
         {/* Dynamic header stats dashboard */}
         <div className="w-full flex justify-between items-center px-4 py-2 border-b border-rose-950/40 opacity-90 text-[11px] font-mono tracking-wider text-slate-300">
           <span className="flex items-center gap-1"><Shield size={12} className="text-blue-400" /> SCHOOL AREA MAP</span>
-          <span className="text-emerald-400 flex items-center gap-1 uppercase">● FLOOR LEVEL {currentFloor} / 5</span>
+          
+          <div className="flex items-center gap-3">
+            {/* View Mode Switcher */}
+            <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 p-0.5 rounded-lg">
+              <button
+                onClick={() => setIs3DMode(false)}
+                className={`px-2 py-0.5 rounded text-[9px] font-extrabold tracking-wider transition-all ${!is3DMode ? "bg-cyan-950/50 text-cyan-400 border border-cyan-800/40" : "text-slate-500 hover:text-slate-300"}`}
+              >
+                2D BLUEPRINT
+              </button>
+              <button
+                onClick={() => setIs3DMode(true)}
+                className={`px-2 py-0.5 rounded text-[9px] font-extrabold tracking-wider transition-all ${is3DMode ? "bg-rose-950/50 text-rose-400 border border-rose-800/40" : "text-slate-500 hover:text-slate-300"}`}
+              >
+                3D REALISM
+              </button>
+            </div>
+            
+            <span className="text-emerald-400 flex items-center gap-1 uppercase">● FLOOR LEVEL {currentFloor} / 5</span>
+          </div>
         </div>
 
         {/* Viewport scaling wrapper to cleanly resize on mobile or small desktops without breaking canvas dimensions */}
@@ -2108,7 +2740,14 @@ export function GameCanvas({
             width={900}
             height={1000}
             id="game-board-canvas"
-            className="block max-w-full max-h-[80vh] aspect-[9/10] object-contain cursor-crosshair relative bg-slate-950"
+            className={`${is3DMode ? "hidden" : "block"} max-w-full max-h-[80vh] aspect-[9/10] object-contain cursor-crosshair relative bg-slate-950`}
+          />
+          <canvas
+            ref={canvas3DRef}
+            width={900}
+            height={1000}
+            id="game-board-canvas-3d"
+            className={`${is3DMode ? "block" : "hidden"} max-w-full max-h-[80vh] aspect-[9/10] object-contain cursor-crosshair relative bg-slate-950`}
           />
         </div>
 
