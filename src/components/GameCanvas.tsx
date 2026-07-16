@@ -5,9 +5,9 @@
 
 import React, { useRef, useState, useEffect } from "react";
 import * as THREE from "three";
-import { CharacterClass, PlayerState, TobbyState, AIState, PuddleState, SoundWaveState, MedicineItemState, GameItemState, ItemType, DecoyCatnipState } from "../types";
+import { CharacterClass, PlayerState, TobbyState, AIState, PuddleState, SoundWaveState, MedicineItemState, GameItemState, ItemType, DecoyCatnipState, GameObstacle } from "../types";
 import { ROOMS, ALL_OBSTACLES, MAP_SVG, TOBBY_SVG, RUNNER_SVG, MARCUS_SVG, FAIBE_SVG, RUNNER_WALK1_SVG, RUNNER_WALK2_SVG, MARCUS_WALK1_SVG, MARCUS_WALK2_SVG, FAIBE_WALK1_SVG, FAIBE_WALK2_SVG, TOBBY_WALK1_SVG, TOBBY_WALK2_SVG } from "../data";
-import { isLocationWalkable, getRoomAt, checkLineOfSight, playScreamSound, playRamSound, playPacifySound, playDamageSound, playSoundWaveAttack, playFootstepSound, playActiveAbilityRunner, playMedicinePickupSound, setCurrentActiveFloor, getObstaclesForFloor, generateFloor1Maze } from "../utils";
+import { isLocationWalkable, getRoomAt, checkLineOfSight, playScreamSound, playRamSound, playPacifySound, playDamageSound, playSoundWaveAttack, playFootstepSound, playActiveAbilityRunner, playMedicinePickupSound, setCurrentActiveFloor, getObstaclesForFloor, generateFloor1Maze, currentFloorObstacles, setCurrentFloorObstacles, resetInitializedObstacles } from "../utils";
 import { Shield, Sparkles, AlertTriangle, ArrowRight, Home, RefreshCw, Volume2, VolumeX, Eye, Flame, Heart, Zap, BookOpen } from "lucide-react";
 import { SurvivalGuide } from "./SurvivalGuide";
 
@@ -156,6 +156,7 @@ export function GameCanvas({
       tobbys: TobbyState[];
       medicines: GameItemState[];
       puddles: PuddleState[];
+      obstacles?: GameObstacle[];
     };
   }>({});
 
@@ -205,6 +206,7 @@ export function GameCanvas({
         tobbys: [...tobbysRef.current],
         medicines: [...medicinesRef.current],
         puddles: [...puddlesRef.current],
+        obstacles: [...currentFloorObstacles],
       };
     }
 
@@ -289,6 +291,7 @@ export function GameCanvas({
       freshGameRef.current = false;
       floorDataRef.current = {};
       previousFloorRef.current = -1;
+      resetInitializedObstacles();
     } else {
       setPlayerLives(p.lives);
     }
@@ -305,9 +308,14 @@ export function GameCanvas({
       setTobbyCount(preserved.tobbys.length);
       medicinesRef.current = preserved.medicines;
       puddlesRef.current = preserved.puddles;
+      
+      const activeObs = preserved.obstacles || getObstaclesForFloor(currentFloor);
+      setCurrentFloorObstacles(activeObs);
     }
 
     if (!hasPersistedData) {
+      const activeObs = getObstaclesForFloor(currentFloor);
+      setCurrentFloorObstacles(activeObs);
       const spawnRooms = ["C1", "C2", "C3", "C4", "C5", "Office1", "Office2", "Toilets", "Hallway"];
       
       // Determine a balanced, localized survival threat level: 5 to 7 Tobbys per floor.
@@ -918,6 +926,165 @@ export function GameCanvas({
     };
   }, [muted, is3DMode]);
 
+  const checkObstacleBreaking = (nextX: number, nextY: number, radius: number): boolean => {
+    const p = playerRef.current;
+    
+    // Player must be moving fast (Burst active or Marcus ramming) to break blocks
+    const isSpeeding = p.isBurstActive || p.isRamming;
+    if (!isSpeeding) return false;
+
+    let brokenAny = false;
+    const remainingObs: GameObstacle[] = [];
+
+    for (const obs of currentFloorObstacles) {
+      const obsMinX = obs.x - radius;
+      const obsMaxX = obs.x + obs.width + radius;
+      const obsMinY = obs.y - radius;
+      const obsMaxY = obs.y + obs.height + radius;
+
+      if (nextX >= obsMinX && xBoundaryCheck(nextX, obs) && nextY >= obsMinY && yBoundaryCheck(nextY, obs)) {
+        // Colliding with this obstacle! Let's check if we can break it.
+        const name = obs.name || "";
+        
+        let canBreak = false;
+        if (characterClass === CharacterClass.MARCUS) {
+          // Marcus can break absolutely anything when ramming or burst sprinting!
+          canBreak = true;
+        } else if (characterClass === CharacterClass.RUNNER) {
+          // Runner can break desks, files, and debris (light/medium obstacles) when burst active
+          const isHeavyObstacle = name.includes("Conference Table") || name.includes("Washing Sinks") || name.includes("Toilet Partition");
+          if (!isHeavyObstacle) {
+            canBreak = true;
+          }
+        } else if (characterClass === CharacterClass.FAIBE) {
+          // Faibe can break desks and debris when burst active
+          const isHeavyObstacle = name.includes("Conference Table") || name.includes("Washing Sinks") || name.includes("Toilet Partition");
+          if (!isHeavyObstacle) {
+            canBreak = true;
+          }
+        }
+
+        if (canBreak) {
+          brokenAny = true;
+          
+          // Spawn satisfying break explosion particles in 3D scene!
+          const obsCenterX = obs.x + obs.width / 2;
+          const obsCenterZ = obs.y + obs.height / 2;
+          
+          // Determine particle color based on obstacle type
+          let particleColor = 0x854d0e; // dark yellow / wood color for desks/tables
+          if (name.includes("Locker") || name.includes("Metal") || name.includes("Cabinet")) {
+            particleColor = 0x94a3b8; // steel gray
+          } else if (name.includes("Debris") || name.includes("Blockade") || name.includes("Barricade")) {
+            particleColor = 0x475569; // dark concrete/stone
+          }
+
+          if (characterClass === CharacterClass.FAIBE) {
+            // Faibe breaks blocks with magical purple sparks!
+            for (let i = 0; i < 20; i++) {
+              spawnThreeParticle(
+                obsCenterX + (Math.random() - 0.5) * obs.width,
+                Math.random() * 15 + 2,
+                obsCenterZ + (Math.random() - 0.5) * obs.height,
+                (Math.random() - 0.5) * 45,
+                Math.random() * 25 + 10,
+                (Math.random() - 0.5) * 45,
+                'spark',
+                0xa855f7 // magical purple
+              );
+            }
+          } else if (characterClass === CharacterClass.MARCUS) {
+            // Marcus breaks blocks with heavy dust and concrete debris!
+            for (let i = 0; i < 25; i++) {
+              spawnThreeParticle(
+                obsCenterX + (Math.random() - 0.5) * obs.width,
+                Math.random() * 12 + 2,
+                obsCenterZ + (Math.random() - 0.5) * obs.height,
+                (Math.random() - 0.5) * 60,
+                Math.random() * 30 + 15,
+                (Math.random() - 0.5) * 60,
+                'dust',
+                particleColor
+              );
+            }
+          } else {
+            // Runner breaks blocks with swift sparks and splinters!
+            for (let i = 0; i < 15; i++) {
+              spawnThreeParticle(
+                obsCenterX + (Math.random() - 0.5) * obs.width,
+                Math.random() * 10 + 2,
+                obsCenterZ + (Math.random() - 0.5) * obs.height,
+                (Math.random() - 0.5) * 50,
+                Math.random() * 20 + 8,
+                (Math.random() - 0.5) * 50,
+                'spark',
+                particleColor
+              );
+            }
+          }
+
+          // Also trigger a loud physical break/crash sound effect tone using the synthesizers!
+          if (!muted) {
+            try {
+              const c = new (window.AudioContext || (window as any).webkitAudioContext)();
+              const osc = c.createOscillator();
+              const gain = c.createGain();
+              osc.type = "sawtooth";
+              osc.frequency.setValueAtTime(180, c.currentTime);
+              osc.frequency.exponentialRampToValueAtTime(30, c.currentTime + 0.25);
+              gain.gain.setValueAtTime(0.12, c.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.26);
+              osc.connect(gain);
+              gain.connect(c.destination);
+              osc.start();
+              osc.stop(c.currentTime + 0.27);
+            } catch (e) {}
+          }
+
+          // Brief screenshake or soundwave ripple effect
+          soundWavesRef.current.push({
+            x: obsCenterX,
+            y: obsCenterZ,
+            radius: 8,
+            maxRadius: 60,
+            timeLeft: 0.3,
+          });
+
+          // Do NOT add this obstacle to remaining list (it is broken!)
+          continue;
+        }
+      }
+
+      remainingObs.push(obs);
+    }
+
+    if (brokenAny) {
+      setCurrentFloorObstacles(remainingObs);
+      
+      // Save to floor data persistence ref as well!
+      if (floorDataRef.current[currentFloor]) {
+        floorDataRef.current[currentFloor].obstacles = remainingObs;
+      }
+
+      // Rebuild the 3D meshes immediately so they vanish from Three.js scene!
+      rebuildObstacles3D();
+      return true;
+    }
+
+    return false;
+  };
+
+  // Simple boundary checks for checkObstacleBreaking
+  const xBoundaryCheck = (nextX: number, obs: GameObstacle): boolean => {
+    const radius = 11.5;
+    return nextX <= obs.x + obs.width + radius;
+  };
+
+  const yBoundaryCheck = (nextY: number, obs: GameObstacle): boolean => {
+    const radius = 11.5;
+    return nextY <= obs.y + obs.height + radius;
+  };
+
   // Core physics logic
   const updatePhysics = (dt: number) => {
     const p = playerRef.current;
@@ -1108,13 +1275,33 @@ export function GameCanvas({
       const radius = 11.5; // Highly responsive player collision radius to prevent dead-zones
 
       let canMove = isLocationWalkable(nextX, nextY, radius);
+      if (!canMove) {
+        const broke = checkObstacleBreaking(nextX, nextY, radius);
+        if (broke) {
+          canMove = isLocationWalkable(nextX, nextY, radius);
+        }
+      }
+
       if (canMove) {
         p.x = nextX;
         p.y = nextY;
       } else {
         // Smooth slide check
-        const canMoveX = isLocationWalkable(nextX, p.y, radius);
-        const canMoveY = isLocationWalkable(p.x, nextY, radius);
+        let canMoveX = isLocationWalkable(nextX, p.y, radius);
+        if (!canMoveX) {
+          const broke = checkObstacleBreaking(nextX, p.y, radius);
+          if (broke) {
+            canMoveX = isLocationWalkable(nextX, p.y, radius);
+          }
+        }
+
+        let canMoveY = isLocationWalkable(p.x, nextY, radius);
+        if (!canMoveY) {
+          const broke = checkObstacleBreaking(p.x, nextY, radius);
+          if (broke) {
+            canMoveY = isLocationWalkable(p.x, nextY, radius);
+          }
+        }
 
         if (canMoveX && !canMoveY) {
           p.x = nextX;
@@ -1132,19 +1319,49 @@ export function GameCanvas({
           const nudgeAmt = 5;
           if (Math.abs(moveX) > Math.abs(moveY)) {
             // Moving mostly horizontally: nudge vertically to find gap
-            if (isLocationWalkable(nextX, p.y - nudgeAmt, radius)) {
+            let nUp = isLocationWalkable(nextX, p.y - nudgeAmt, radius);
+            if (!nUp) {
+              const broke = checkObstacleBreaking(nextX, p.y - nudgeAmt, radius);
+              if (broke) {
+                nUp = isLocationWalkable(nextX, p.y - nudgeAmt, radius);
+              }
+            }
+            let nDown = isLocationWalkable(nextX, p.y + nudgeAmt, radius);
+            if (!nDown) {
+              const broke = checkObstacleBreaking(nextX, p.y + nudgeAmt, radius);
+              if (broke) {
+                nDown = isLocationWalkable(nextX, p.y + nudgeAmt, radius);
+              }
+            }
+
+            if (nUp) {
               p.x = nextX;
               p.y -= nudgeAmt * 0.4;
-            } else if (isLocationWalkable(nextX, p.y + nudgeAmt, radius)) {
+            } else if (nDown) {
               p.x = nextX;
               p.y += nudgeAmt * 0.4;
             }
           } else {
             // Moving mostly vertically: nudge horizontally to find gap
-            if (isLocationWalkable(p.x - nudgeAmt, nextY, radius)) {
+            let nLeft = isLocationWalkable(p.x - nudgeAmt, nextY, radius);
+            if (!nLeft) {
+              const broke = checkObstacleBreaking(p.x - nudgeAmt, nextY, radius);
+              if (broke) {
+                nLeft = isLocationWalkable(p.x - nudgeAmt, nextY, radius);
+              }
+            }
+            let nRight = isLocationWalkable(p.x + nudgeAmt, nextY, radius);
+            if (!nRight) {
+              const broke = checkObstacleBreaking(p.x + nudgeAmt, nextY, radius);
+              if (broke) {
+                nRight = isLocationWalkable(p.x + nudgeAmt, nextY, radius);
+              }
+            }
+
+            if (nLeft) {
               p.x -= nudgeAmt * 0.4;
               p.y = nextY;
-            } else if (isLocationWalkable(p.x + nudgeAmt, nextY, radius)) {
+            } else if (nRight) {
               p.x += nudgeAmt * 0.4;
               p.y = nextY;
             }
@@ -2252,7 +2469,7 @@ export function GameCanvas({
       obstaclesGroup.remove(obstaclesGroup.children[0]);
     }
 
-    const activeObs = getObstaclesForFloor(currentFloor);
+    const activeObs = currentFloorObstacles;
     activeObs.forEach((obs) => {
       const width = obs.width;
       const height = obs.height;
@@ -2888,7 +3105,7 @@ export function GameCanvas({
 
     // 1.5. Draw procedurally altered level obstacles for visual indicators
     if (currentFloor !== 5) {
-      const activeObs = getObstaclesForFloor(currentFloor);
+      const activeObs = currentFloorObstacles;
       activeObs.forEach((obs) => {
         ctx.fillStyle = "#1e293b";
         ctx.strokeStyle = "#475569";

@@ -8,6 +8,19 @@ import { GameObstacle, Doorway } from "./types";
 
 let currentActiveFloor = 5;
 
+export let currentFloorObstacles: GameObstacle[] = [];
+export let hasInitializedObstacles = false;
+
+export function setCurrentFloorObstacles(obs: GameObstacle[]) {
+  currentFloorObstacles = obs;
+  hasInitializedObstacles = true;
+}
+
+export function resetInitializedObstacles() {
+  hasInitializedObstacles = false;
+  currentFloorObstacles = [];
+}
+
 // Extra horizontal and vertical connecting portals/doorways opened specifically on Floor 1
 export const FLOOR1_EXTRA_DOORWAYS: Doorway[] = [
   { id: "C1_C2_internal", minX: 100, maxX: 140, minY: 195, maxY: 215 },
@@ -303,7 +316,7 @@ export function isLocationWalkable(x: number, y: number, r: number = 12): boolea
   if (!insideAnyRoom) return false;
 
   // 3. Check if we overlap with active procedural floor obstacles
-  const activeObstacles = getObstaclesForFloor(currentActiveFloor);
+  const activeObstacles = hasInitializedObstacles ? currentFloorObstacles : getObstaclesForFloor(currentActiveFloor);
   for (const obs of activeObstacles) {
     const obsMinX = obs.x - r;
     const obsMaxX = obs.x + obs.width + r;
