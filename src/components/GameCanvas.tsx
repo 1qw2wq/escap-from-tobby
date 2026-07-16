@@ -93,6 +93,11 @@ export function GameCanvas({
   const decoysGroupRef = useRef<THREE.Group | null>(null);
   const soundwavesGroupRef = useRef<THREE.Group | null>(null);
 
+  const threeParticlesRef = useRef<{ mesh: THREE.Mesh; vx: number; vy: number; vz: number; life: number; maxLife: number; type: 'dust' | 'spark' | 'splash' | 'slash' }[]>([]);
+  const lastActiveItemCountRef = useRef<number>(-1);
+  const lastActivePuddleCountRef = useRef<number>(-1);
+  const lastActiveDecoyCountRef = useRef<number>(-1);
+
   // Sound context levels
   const [muted, setMuted] = useState(false);
   const [screenDamageFlash, setScreenDamageFlash] = useState(false);
@@ -266,6 +271,15 @@ export function GameCanvas({
 
     // Reset staircase cooldown to prevent immediate staircase loop triggering
     staircaseCooldownRef.current = 4.0;
+
+    // Reset 3D mesh caching counters and particle pools on transition
+    lastActiveItemCountRef.current = -1;
+    lastActivePuddleCountRef.current = -1;
+    lastActiveDecoyCountRef.current = -1;
+    threeParticlesRef.current.forEach((pObj) => {
+      pObj.life = 0;
+      if (pObj.mesh) pObj.mesh.visible = false;
+    });
 
     // Persist or initialize lives across floors
     if (freshGameRef.current) {
@@ -888,7 +902,7 @@ export function GameCanvas({
 
       updatePhysics(dt);
       if (is3DMode) {
-        renderThree();
+        renderThree(dt);
       } else {
         drawGraphics();
       }
@@ -1622,6 +1636,12 @@ export function GameCanvas({
     torsoMesh.position.y = 10 + 2 + torsoHeight / 2; // centered
     group.add(torsoMesh);
 
+    // --- Head Group ---
+    const headGroup = new THREE.Group();
+    headGroup.name = "headGroup";
+    const headY = 10 + 2 + torsoHeight + 5; // e.g., 28.5
+    headGroup.position.set(0, headY, 0);
+
     // --- Head ---
     const headGeo = new THREE.SphereGeometry(5.5, 16, 16);
     const headMat = new THREE.MeshStandardMaterial({
@@ -1629,9 +1649,8 @@ export function GameCanvas({
       roughness: 0.4,
     });
     const headMesh = new THREE.Mesh(headGeo, headMat);
-    const headY = 10 + 2 + torsoHeight + 5; // e.g., 28.5
-    headMesh.position.y = headY;
-    group.add(headMesh);
+    headMesh.position.set(0, 0, 0);
+    headGroup.add(headMesh);
 
     // --- Visor / Eyes ---
     const eyeGeo = new THREE.BoxGeometry(7, 1.8, 1.8);
@@ -1639,13 +1658,13 @@ export function GameCanvas({
       color: isMagical ? 0xd8b4fe : (isHeavy ? 0xa7f3d0 : 0x93c5fd),
     });
     const eyeMesh = new THREE.Mesh(eyeGeo, eyeMat);
-    eyeMesh.position.set(0, headY + 0.5, 4.8);
-    group.add(eyeMesh);
+    eyeMesh.position.set(0, 0.5, 4.8);
+    headGroup.add(eyeMesh);
 
     // --- Hair ---
     // spiky stylish low-poly hair using overlapping box/cones
     const hairGroup = new THREE.Group();
-    hairGroup.position.set(0, headY + 2.5, -1);
+    hairGroup.position.set(0, 2.5, -1);
     
     const hairMainGeo = new THREE.SphereGeometry(5.8, 8, 8, 0, Math.PI * 2, 0, Math.PI / 1.6);
     const hairMainMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.8 });
@@ -1662,7 +1681,8 @@ export function GameCanvas({
       spike.rotation.z = (i - 2) * 0.15;
       hairGroup.add(spike);
     }
-    group.add(hairGroup);
+    headGroup.add(hairGroup);
+    group.add(headGroup);
 
     // --- Legs ---
     // We create pivot groups for legs so they rotate around (0,0,0) local
@@ -1757,8 +1777,8 @@ export function GameCanvas({
       const haloMat = new THREE.MeshBasicMaterial({ color: 0xa855f7, transparent: true, opacity: 0.7 });
       const halo = new THREE.Mesh(haloGeo, haloMat);
       halo.rotation.x = Math.PI / 2;
-      halo.position.y = headY + 5;
-      group.add(halo);
+      halo.position.set(0, 5, 0); // local offset
+      headGroup.add(halo);
     }
 
     return group;
@@ -1800,6 +1820,12 @@ export function GameCanvas({
     tieMesh.rotation.x = -Math.PI / 12;
     group.add(tieMesh);
 
+    // --- Head Group ---
+    const headGroup = new THREE.Group();
+    headGroup.name = "headGroup";
+    const headY = 11 + 2.2 + torsoHeight + 5; // y = 32.2
+    headGroup.position.set(0, headY, 0);
+
     // --- Head ---
     const headGeo = new THREE.SphereGeometry(6, 16, 16);
     const headMat = new THREE.MeshStandardMaterial({
@@ -1807,9 +1833,8 @@ export function GameCanvas({
       roughness: 0.4,
     });
     const headMesh = new THREE.Mesh(headGeo, headMat);
-    const headY = 11 + 2.2 + torsoHeight + 5; // y = 32.2
-    headMesh.position.y = headY;
-    group.add(headMesh);
+    headMesh.position.set(0, 0, 0);
+    headGroup.add(headMesh);
 
     // --- Spectacles with Red Glowing Threat Lenses ---
     const glassesGroup = new THREE.Group();
@@ -1833,24 +1858,26 @@ export function GameCanvas({
     glassesGroup.add(rightGlass);
     glassesGroup.add(leftLens);
     glassesGroup.add(rightLens);
-    glassesGroup.position.set(0, headY + 0.4, 5.2);
-    group.add(glassesGroup);
+    glassesGroup.position.set(0, 0.4, 5.2);
+    headGroup.add(glassesGroup);
 
     // --- Hair (Combed corporate look) ---
     const hairGeo = new THREE.SphereGeometry(6.4, 8, 8, 0, Math.PI * 2, 0, Math.PI / 1.8);
     const hairMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.9 });
     const hairMesh = new THREE.Mesh(hairGeo, hairMat);
-    hairMesh.position.set(0, headY + 1.2, -0.5);
+    hairMesh.position.set(0, 1.2, -0.5);
     hairMesh.rotation.x = -Math.PI / 15;
-    group.add(hairMesh);
+    headGroup.add(hairMesh);
 
     // Extra lock of hair on front
     const hairSpikeGeo = new THREE.ConeGeometry(1.2, 3, 4);
     const hairSpike = new THREE.Mesh(hairSpikeGeo, hairMat);
-    hairSpike.position.set(2, headY + 4, 4);
+    hairSpike.position.set(2, 4, 4);
     hairSpike.rotation.x = Math.PI / 3;
     hairSpike.rotation.z = -Math.PI / 6;
-    group.add(hairSpike);
+    headGroup.add(hairSpike);
+
+    group.add(headGroup);
 
     // --- Legs ---
     const legLength = 11;
@@ -2282,7 +2309,159 @@ export function GameCanvas({
     });
   };
 
-  const updateThreeEntities = () => {
+  const create3DItemMesh = (type: ItemType): THREE.Group => {
+    const group = new THREE.Group();
+    const animGroup = new THREE.Group();
+    animGroup.name = "animatedGroup";
+    
+    if (type === ItemType.MEDICINE) {
+      const caseGeo = new THREE.BoxGeometry(11, 7, 4);
+      const caseMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.6 });
+      const suitcase = new THREE.Mesh(caseGeo, caseMat);
+      suitcase.rotation.x = Math.PI / 6;
+      animGroup.add(suitcase);
+
+      const crossH = new THREE.Mesh(new THREE.BoxGeometry(5, 1.2, 1.2), new THREE.MeshBasicMaterial({ color: 0x22c55e }));
+      const crossV = new THREE.Mesh(new THREE.BoxGeometry(1.2, 5, 1.2), new THREE.MeshBasicMaterial({ color: 0x22c55e }));
+      crossH.position.set(0, 5, 0);
+      crossV.position.set(0, 5, 0);
+      animGroup.add(crossH);
+      animGroup.add(crossV);
+    } else if (type === ItemType.CATNIP) {
+      const pouchGeo = new THREE.SphereGeometry(4.5, 8, 8);
+      const pouchMat = new THREE.MeshStandardMaterial({ color: 0xc084fc, roughness: 0.8 });
+      const pouch = new THREE.Mesh(pouchGeo, pouchMat);
+      animGroup.add(pouch);
+      
+      const ringGeo = new THREE.RingGeometry(5, 6, 8);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0xa855f7, side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 1.5;
+      animGroup.add(ring);
+    } else if (type === ItemType.ENERGY_CAN) {
+      const canGeo = new THREE.CylinderGeometry(3.2, 3.2, 8, 12);
+      const canMat = new THREE.MeshStandardMaterial({ color: 0xf97316, metalness: 0.8, roughness: 0.1 });
+      const can = new THREE.Mesh(canGeo, canMat);
+      can.rotation.x = Math.PI / 8;
+      animGroup.add(can);
+    } else if (type === ItemType.EMP) {
+      const coreGeo = new THREE.OctahedronGeometry(5, 0);
+      const coreMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4, wireframe: true });
+      const core = new THREE.Mesh(coreGeo, coreMat);
+      animGroup.add(core);
+
+      const coreInner = new THREE.Mesh(new THREE.SphereGeometry(2.5, 8, 8), new THREE.MeshBasicMaterial({ color: 0x22d3ee }));
+      animGroup.add(coreInner);
+    }
+    
+    group.add(animGroup);
+    return group;
+  };
+
+  const create3DPuddleMesh = (radius: number): THREE.Group => {
+    const group = new THREE.Group();
+    
+    const geo = new THREE.CylinderGeometry(radius, radius, 0.4, 16);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x0e7490,
+      transparent: true,
+      opacity: 0.65,
+      roughness: 0.1,
+      metalness: 0.8,
+    });
+    const puddleMesh = new THREE.Mesh(geo, mat);
+    group.add(puddleMesh);
+
+    const ringGeo = new THREE.RingGeometry(radius - 1, radius + 1, 16);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x22d3ee, side: THREE.DoubleSide, transparent: true, opacity: 0.4 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.1;
+    group.add(ring);
+    
+    return group;
+  };
+
+  const create3DDecoyMesh = (): THREE.Group => {
+    const group = new THREE.Group();
+    const geo = new THREE.SphereGeometry(6, 12, 12);
+    const mat = new THREE.MeshStandardMaterial({ color: 0xa855f7, roughness: 0.6, metalness: 0.5 });
+    const decoyMesh = new THREE.Mesh(geo, mat);
+    decoyMesh.name = "decoyBody";
+    group.add(decoyMesh);
+
+    const ringGeo = new THREE.RingGeometry(1, 15, 24);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xd8b4fe,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.5,
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.name = "pulseRing";
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = -5.8;
+    group.add(ring);
+    
+    return group;
+  };
+
+  const spawnThreeParticle = (x: number, y: number, z: number, vx: number, vy: number, vz: number, type: 'dust' | 'spark' | 'splash' | 'slash', color: number) => {
+    const scene = threeSceneRef.current;
+    if (!scene) return;
+
+    let pObj = threeParticlesRef.current.find(p => p.life <= 0);
+    if (!pObj) {
+      if (threeParticlesRef.current.length < 150) {
+        const geo = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+        const mat = new THREE.MeshBasicMaterial({ color: color, transparent: true });
+        const mesh = new THREE.Mesh(geo, mat);
+        scene.add(mesh);
+        pObj = { mesh, vx, vy, vz, life: 0, maxLife: 0, type };
+        threeParticlesRef.current.push(pObj);
+      } else {
+        pObj = threeParticlesRef.current.reduce((oldest, current) => current.life < oldest.life ? current : oldest);
+      }
+    }
+
+    if (pObj) {
+      pObj.mesh.position.set(x, y, z);
+      pObj.vx = vx;
+      pObj.vy = vy;
+      pObj.vz = vz;
+      pObj.life = type === 'dust' ? 0.4 : (type === 'spark' ? 0.5 : 0.3);
+      pObj.maxLife = pObj.life;
+      pObj.type = type;
+      (pObj.mesh.material as THREE.MeshBasicMaterial).color.setHex(color);
+      pObj.mesh.visible = true;
+    }
+  };
+
+  const updateThreeParticles = (dt: number) => {
+    threeParticlesRef.current.forEach(p => {
+      if (p.life > 0) {
+        p.life -= dt;
+        if (p.life <= 0) {
+          p.mesh.visible = false;
+        } else {
+          p.mesh.position.x += p.vx * dt;
+          p.mesh.position.y += p.vy * dt;
+          p.mesh.position.z += p.vz * dt;
+
+          if (p.type === 'splash' || p.type === 'slash') {
+            p.vy -= 9.8 * 8 * dt; // gravity
+          }
+
+          const ratio = p.life / p.maxLife;
+          (p.mesh.material as THREE.MeshBasicMaterial).opacity = ratio;
+          p.mesh.scale.setScalar(ratio);
+        }
+      }
+    });
+  };
+
+  const updateThreeEntities = (dt: number = 0.016) => {
     const scene = threeSceneRef.current;
     if (!scene) return;
 
@@ -2317,7 +2496,86 @@ export function GameCanvas({
         if (rightArm) rightArm.rotation.x += (-breath - rightArm.rotation.x) * 0.15;
       }
 
+      // --- Dynamic Head Movement ---
+      const headGroup = playerMesh.getObjectByName("headGroup");
+      if (headGroup) {
+        if (isMoving) {
+          // Lean head forward when running, subtle head bobbing
+          const targetRotX = p.isBurstActive ? 0.28 : 0.15;
+          const targetRotY = Math.sin(walkCycle * (p.isBurstActive ? 20 : 12)) * 0.05;
+          headGroup.rotation.x += (targetRotX - headGroup.rotation.x) * 0.15;
+          headGroup.rotation.y += (targetRotY - headGroup.rotation.y) * 0.15;
+          headGroup.rotation.z += (0 - headGroup.rotation.z) * 0.15;
+        } else {
+          // Standing still: rotate head dynamically to look towards mouse target / reticle!
+          let targetRotY = 0;
+          let targetRotX = 0;
+          if (mouseTargetRef.current) {
+            const dx = mouseTargetRef.current.x - p.x;
+            const dy = mouseTargetRef.current.y - p.y;
+            const mouseAngle = Math.atan2(dy, dx);
+            const diffAngle = normalizeAngle(mouseAngle - p.angle);
+            // Look direction (clamp to ±70 degrees to prevent unnatural backward neck snaps)
+            targetRotY = Math.max(-1.2, Math.min(1.2, diffAngle));
+            
+            // Look slightly down if pointer is close
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            targetRotX = Math.max(-0.4, Math.min(0.4, (120 - dist) * 0.003));
+          } else {
+            // Idle breathing slow tilt
+            targetRotY = Math.sin(walkCycle * 1.5) * 0.04;
+            targetRotX = Math.sin(walkCycle * 2.2) * 0.02;
+          }
+
+          headGroup.rotation.y += (targetRotY - headGroup.rotation.y) * 0.15;
+          headGroup.rotation.x += (targetRotX - headGroup.rotation.x) * 0.15;
+          headGroup.rotation.z += (Math.sin(walkCycle * 1.2) * 0.03 - headGroup.rotation.z) * 0.15;
+        }
+      }
+
+      // --- Emit Real-time 3D Particles ---
+      if (isMoving) {
+        if (!footstepTimerRef.current) footstepTimerRef.current = 0;
+        footstepTimerRef.current += dt;
+        if (footstepTimerRef.current >= 0.08) {
+          footstepTimerRef.current = 0;
+          const backAngle = p.angle + Math.PI;
+          const px = p.x + Math.cos(backAngle) * 4 + (Math.random() - 0.5) * 3;
+          const pz = p.y + Math.sin(backAngle) * 4 + (Math.random() - 0.5) * 3;
+          spawnThreeParticle(px, 1.2, pz, (Math.random() - 0.5) * 10, Math.random() * 8 + 4, (Math.random() - 0.5) * 10, 'dust', 0x94a3b8);
+        }
+      }
+
       const isSpeeding = p.isBurstActive || (p.hyperChargeTime && p.hyperChargeTime > 0);
+      if (p.hyperChargeTime && p.hyperChargeTime > 0) {
+        // Emit glowing gold particles
+        const px = p.x + (Math.random() - 0.5) * 12;
+        const pz = p.y + (Math.random() - 0.5) * 12;
+        spawnThreeParticle(px, Math.random() * 20 + 2, pz, (Math.random() - 0.5) * 6, Math.random() * 18 + 12, (Math.random() - 0.5) * 6, 'spark', 0xf59e0b);
+      } else if (p.isBurstActive) {
+        // Emit blue trail sparks
+        const px = p.x + (Math.random() - 0.5) * 8;
+        const pz = p.y + (Math.random() - 0.5) * 8;
+        spawnThreeParticle(px, Math.random() * 16 + 2, pz, (Math.random() - 0.5) * 4, Math.random() * 12 + 6, (Math.random() - 0.5) * 4, 'spark', 0x38bdf8);
+      }
+
+      // Splash particles when running inside puddle
+      let playerInPuddle = false;
+      for (const puddle of puddlesRef.current) {
+        const distToPuddle = Math.sqrt((p.x - puddle.x) ** 2 + (p.y - puddle.y) ** 2);
+        if (distToPuddle <= puddle.radius) {
+          playerInPuddle = true;
+          break;
+        }
+      }
+      if (playerInPuddle && isMoving && Math.random() < 0.3) {
+        const px = p.x + (Math.random() - 0.5) * 6;
+        const pz = p.y + (Math.random() - 0.5) * 6;
+        spawnThreeParticle(px, 1.5, pz, (Math.random() - 0.5) * 24, Math.random() * 18 + 8, (Math.random() - 0.5) * 24, 'splash', 0x22d3ee);
+      }
+
+      updateThreeParticles(dt);
+
       const ring = playerMesh.children[0] as THREE.Mesh;
       if (ring && ring.material) {
         (ring.material as THREE.MeshBasicMaterial).color.setHex(isSpeeding ? 0xf59e0b : (characterClass === CharacterClass.RUNNER ? 0x3b82f6 : (characterClass === CharacterClass.MARCUS ? 0x15803d : 0xbe123c)));
@@ -2403,6 +2661,38 @@ export function GameCanvas({
             if (tRightArm) tRightArm.rotation.x += (-tBreath - tRightArm.rotation.x) * 0.2;
           }
 
+          // --- Dynamic Creepy Tobby Head Movement ---
+          const tHeadGroup = tMesh.getObjectByName("headGroup");
+          if (tHeadGroup) {
+            if (t.aiState === AIState.CHASING) {
+              // Lock on to player position creepily!
+              const dx = p.x - t.x;
+              const dy = p.y - t.y;
+              const playerAngle = Math.atan2(dy, dx);
+              const diffAngle = normalizeAngle(playerAngle - t.angle);
+              
+              const targetRotY = Math.max(-1.4, Math.min(1.4, diffAngle));
+              const targetRotX = 0.2 + Math.sin(tobbyWalkCycle * 20) * 0.05; // Twitching neck effect
+              
+              tHeadGroup.rotation.y += (targetRotY - tHeadGroup.rotation.y) * 0.25;
+              tHeadGroup.rotation.x += (targetRotX - tHeadGroup.rotation.x) * 0.25;
+              tHeadGroup.rotation.z += (Math.sin(tobbyWalkCycle * 25) * 0.06 - tHeadGroup.rotation.z) * 0.25; // shivering with corporate rage
+            } else if (isTobbyMoving) {
+              // Patrolling: look around (scanning corridors side-to-side)
+              const scanAngle = Math.sin(tobbyWalkCycle * 3.5) * 0.35;
+              tHeadGroup.rotation.y += (scanAngle - tHeadGroup.rotation.y) * 0.15;
+              tHeadGroup.rotation.x += (0.05 - tHeadGroup.rotation.x) * 0.15;
+              tHeadGroup.rotation.z += (0 - tHeadGroup.rotation.z) * 0.15;
+            } else {
+              // Idle/Staring: creepy slow head tilt
+              const slowTiltZ = Math.sin(tobbyWalkCycle * 1.0) * 0.18; // Slow head-tilt
+              const scanAngle = Math.sin(tobbyWalkCycle * 0.6) * 0.2;
+              tHeadGroup.rotation.z += (slowTiltZ - tHeadGroup.rotation.z) * 0.1;
+              tHeadGroup.rotation.y += (scanAngle - tHeadGroup.rotation.y) * 0.1;
+              tHeadGroup.rotation.x += (Math.sin(tobbyWalkCycle * 0.8) * 0.04 - tHeadGroup.rotation.x) * 0.1;
+            }
+          }
+
           const bobSpeed = t.aiState === AIState.CHASING ? 15 : 6;
           tMesh.position.y = Math.abs(Math.sin(Date.now() / 1000 * bobSpeed)) * 1.8;
 
@@ -2430,158 +2720,133 @@ export function GameCanvas({
 
     const itemsGroup = itemsGroupRef.current;
     if (itemsGroup) {
-      while (itemsGroup.children.length > 0) {
-        itemsGroup.remove(itemsGroup.children[0]);
+      const activeItems = medicinesRef.current.filter((item) => !item.pickedUp);
+      
+      if (lastActiveItemCountRef.current !== activeItems.length) {
+        lastActiveItemCountRef.current = activeItems.length;
+        while (itemsGroup.children.length > 0) {
+          itemsGroup.remove(itemsGroup.children[0]);
+        }
+        activeItems.forEach((item) => {
+          const itemMesh = create3DItemMesh(item.type);
+          itemMesh.position.set(item.x, 0, item.y);
+          itemsGroup.add(itemMesh);
+        });
       }
 
-      medicinesRef.current.forEach((item) => {
-        if (item.pickedUp) return;
+      const floatY = 4 + Math.sin(Date.now() / 200) * 1.5;
+      const rotateAngle = Date.now() / 1000;
 
-        const itemMesh = new THREE.Group();
-        itemMesh.position.set(item.x, 0, item.y);
-
-        const floatY = 4 + Math.sin(Date.now() / 200) * 1.5;
-        const rotateAngle = Date.now() / 1000;
-
-        if (item.type === ItemType.MEDICINE) {
-          const caseGeo = new THREE.BoxGeometry(11, 7, 4);
-          const caseMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.6 });
-          const suitcase = new THREE.Mesh(caseGeo, caseMat);
-          suitcase.position.y = floatY;
-          suitcase.rotation.x = Math.PI / 6;
-          suitcase.rotation.y = rotateAngle;
-          itemMesh.add(suitcase);
-
-          const crossH = new THREE.Mesh(new THREE.BoxGeometry(5, 1.2, 1.2), new THREE.MeshBasicMaterial({ color: 0x22c55e }));
-          const crossV = new THREE.Mesh(new THREE.BoxGeometry(1.2, 5, 1.2), new THREE.MeshBasicMaterial({ color: 0x22c55e }));
-          crossH.position.set(0, floatY + 7, 0);
-          crossV.position.set(0, floatY + 7, 0);
-          itemMesh.add(crossH);
-          itemMesh.add(crossV);
-        } else if (item.type === ItemType.CATNIP) {
-          const pouchGeo = new THREE.SphereGeometry(4.5, 8, 8);
-          const pouchMat = new THREE.MeshStandardMaterial({ color: 0xc084fc, roughness: 0.8 });
-          const pouch = new THREE.Mesh(pouchGeo, pouchMat);
-          pouch.position.y = floatY;
-          pouch.rotation.y = rotateAngle;
-          itemMesh.add(pouch);
-          
-          const ringGeo = new THREE.RingGeometry(5, 6, 8);
-          const ringMat = new THREE.MeshBasicMaterial({ color: 0xa855f7, side: THREE.DoubleSide });
-          const ring = new THREE.Mesh(ringGeo, ringMat);
-          ring.rotation.x = Math.PI/2;
-          ring.position.y = floatY + 1.5;
-          itemMesh.add(ring);
-        } else if (item.type === ItemType.ENERGY_CAN) {
-          const canGeo = new THREE.CylinderGeometry(3.2, 3.2, 8, 12);
-          const canMat = new THREE.MeshStandardMaterial({ color: 0xf97316, metalness: 0.8, roughness: 0.1 });
-          const can = new THREE.Mesh(canGeo, canMat);
-          can.position.y = floatY;
-          can.rotation.y = rotateAngle;
-          can.rotation.x = Math.PI / 8;
-          itemMesh.add(can);
-        } else if (item.type === ItemType.EMP) {
-          const coreGeo = new THREE.OctahedronGeometry(5, 0);
-          const coreMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4, wireframe: true });
-          const core = new THREE.Mesh(coreGeo, coreMat);
-          core.position.y = floatY;
-          core.rotation.set(rotateAngle, rotateAngle, 0);
-          itemMesh.add(core);
-
-          const coreInner = new THREE.Mesh(new THREE.SphereGeometry(2.5, 8, 8), new THREE.MeshBasicMaterial({ color: 0x22d3ee }));
-          coreInner.position.y = floatY;
-          itemMesh.add(coreInner);
+      activeItems.forEach((item, idx) => {
+        const itemMesh = itemsGroup.children[idx] as THREE.Group;
+        if (itemMesh) {
+          itemMesh.position.set(item.x, 0, item.y);
+          const animGroup = itemMesh.getObjectByName("animatedGroup");
+          if (animGroup) {
+            animGroup.position.y = floatY;
+            animGroup.rotation.y = rotateAngle;
+            if (item.type === ItemType.EMP) {
+              animGroup.rotation.x = rotateAngle;
+            }
+          }
         }
-
-        itemsGroup.add(itemMesh);
       });
     }
 
     const puddlesGroup = puddlesGroupRef.current;
     if (puddlesGroup) {
-      while (puddlesGroup.children.length > 0) {
-        puddlesGroup.remove(puddlesGroup.children[0]);
+      const puddles = puddlesRef.current;
+      if (lastActivePuddleCountRef.current !== puddles.length) {
+        lastActivePuddleCountRef.current = puddles.length;
+        while (puddlesGroup.children.length > 0) {
+          puddlesGroup.remove(puddlesGroup.children[0]);
+        }
+        puddles.forEach((pud) => {
+          const puddleMesh = create3DPuddleMesh(pud.radius);
+          puddleMesh.position.set(pud.x, 0.2, pud.y);
+          puddlesGroup.add(puddleMesh);
+        });
       }
 
-      puddlesRef.current.forEach((pud) => {
-        const geo = new THREE.CylinderGeometry(pud.radius, pud.radius, 0.4, 16);
-        const mat = new THREE.MeshStandardMaterial({
-          color: 0x0e7490,
-          transparent: true,
-          opacity: 0.65,
-          roughness: 0.1,
-          metalness: 0.8,
-        });
-        const puddleMesh = new THREE.Mesh(geo, mat);
-        puddleMesh.position.set(pud.x, 0.2, pud.y);
-        puddlesGroup.add(puddleMesh);
-
-        const ringGeo = new THREE.RingGeometry(pud.radius - 1, pud.radius + 1, 16);
-        const ringMat = new THREE.MeshBasicMaterial({ color: 0x22d3ee, side: THREE.DoubleSide, transparent: true, opacity: 0.4 });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.y = 0.3;
-        puddleMesh.add(ring);
+      puddles.forEach((pud, idx) => {
+        const puddleMesh = puddlesGroup.children[idx] as THREE.Group;
+        if (puddleMesh) {
+          puddleMesh.position.set(pud.x, 0.2, pud.y);
+        }
       });
     }
 
     const decoysGroup = decoysGroupRef.current;
     if (decoysGroup) {
-      while (decoysGroup.children.length > 0) {
-        decoysGroup.remove(decoysGroup.children[0]);
+      const decoys = decoysRef.current;
+      if (lastActiveDecoyCountRef.current !== decoys.length) {
+        lastActiveDecoyCountRef.current = decoys.length;
+        while (decoysGroup.children.length > 0) {
+          decoysGroup.remove(decoysGroup.children[0]);
+        }
+        decoys.forEach((dec) => {
+          const decoyMesh = create3DDecoyMesh();
+          decoyMesh.position.set(dec.x, 6, dec.y);
+          decoysGroup.add(decoyMesh);
+        });
       }
 
-      decoysRef.current.forEach((dec) => {
-        const geo = new THREE.SphereGeometry(6, 12, 12);
-        const mat = new THREE.MeshStandardMaterial({ color: 0xa855f7, roughness: 0.6, metalness: 0.5 });
-        const decoyMesh = new THREE.Mesh(geo, mat);
-        decoyMesh.position.set(dec.x, 6, dec.y);
-        decoyMesh.rotation.y = Date.now() / 250;
-        decoysGroup.add(decoyMesh);
+      decoys.forEach((dec, idx) => {
+        const decoyMesh = decoysGroup.children[idx] as THREE.Group;
+        if (decoyMesh) {
+          decoyMesh.position.set(dec.x, 6, dec.y);
+          decoyMesh.rotation.y = Date.now() / 250;
 
-        const waveRadius = ((Date.now() / 12) % 180);
-        const ringGeo = new THREE.RingGeometry(waveRadius - 2, waveRadius + 2, 24);
-        const ringMat = new THREE.MeshBasicMaterial({
-          color: 0xd8b4fe,
-          side: THREE.DoubleSide,
-          transparent: true,
-          opacity: Math.max(0, 1 - waveRadius / 180),
-        });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.y = -5.8;
-        decoyMesh.add(ring);
+          const pulseRing = decoyMesh.getObjectByName("pulseRing") as THREE.Mesh;
+          if (pulseRing) {
+            const waveRadius = ((Date.now() / 12) % 180);
+            pulseRing.scale.setScalar(waveRadius / 15);
+            if (pulseRing.material) {
+              (pulseRing.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - waveRadius / 180) * 0.5;
+            }
+          }
+        }
       });
     }
 
     const soundwavesGroup = soundwavesGroupRef.current;
     if (soundwavesGroup) {
-      while (soundwavesGroup.children.length > 0) {
-        soundwavesGroup.remove(soundwavesGroup.children[0]);
-      }
-
-      soundWavesRef.current.forEach((sw) => {
-        const tRatio = 1 - (sw.timeLeft / 0.6); 
-        const curRadius = sw.radius + tRatio * (sw.maxRadius - sw.radius);
-
-        const ringGeo = new THREE.RingGeometry(curRadius - 3, curRadius + 1, 32);
+      const soundWaves = soundWavesRef.current;
+      
+      while (soundwavesGroup.children.length < soundWaves.length) {
+        const ringGeo = new THREE.RingGeometry(1, 1, 32);
         const ringMat = new THREE.MeshBasicMaterial({
-          color: 0xef4444, 
+          color: 0xef4444,
           side: THREE.DoubleSide,
           transparent: true,
-          opacity: Math.max(0, 1 - tRatio) * 0.9,
+          opacity: 0.9,
         });
         const ring = new THREE.Mesh(ringGeo, ringMat);
         ring.rotation.x = -Math.PI / 2;
-        ring.position.set(sw.x, 0.8, sw.y);
         soundwavesGroup.add(ring);
+      }
+      while (soundwavesGroup.children.length > soundWaves.length) {
+        soundwavesGroup.remove(soundwavesGroup.children[soundwavesGroup.children.length - 1]);
+      }
+
+      soundWaves.forEach((sw, idx) => {
+        const ring = soundwavesGroup.children[idx] as THREE.Mesh;
+        if (ring) {
+          const tRatio = 1 - (sw.timeLeft / 0.6);
+          const curRadius = sw.radius + tRatio * (sw.maxRadius - sw.radius);
+          ring.position.set(sw.x, 0.8, sw.y);
+          ring.scale.setScalar(curRadius);
+          if (ring.material) {
+            (ring.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - tRatio) * 0.9;
+          }
+        }
       });
     }
   };
 
-  const renderThree = () => {
+  const renderThree = (dt: number = 0.016) => {
     checkAndInitThree();
-    updateThreeEntities();
+    updateThreeEntities(dt);
     if (threeRendererRef.current && threeSceneRef.current && threeCameraRef.current) {
       threeRendererRef.current.render(threeSceneRef.current, threeCameraRef.current);
     }
