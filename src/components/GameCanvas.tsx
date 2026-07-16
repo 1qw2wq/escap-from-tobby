@@ -2587,6 +2587,486 @@ export function GameCanvas({
     }
   };
 
+  const createModelForObstacle = (obs: GameObstacle): THREE.Group => {
+    const group = new THREE.Group();
+    const name = obs.name || "";
+    const w = obs.width;
+    const h = obs.height;
+
+    // --- 1. CHAIR / STOOL MODEL ---
+    if (name.includes("Chair") || name.includes("Stool")) {
+      // Seat cushion
+      const seatGeo = new THREE.BoxGeometry(w, 1.2, h);
+      const seatMat = new THREE.MeshStandardMaterial({ color: 0x1e3a8a, roughness: 0.8 }); // Blue plastic/fabric
+      const seat = new THREE.Mesh(seatGeo, seatMat);
+      seat.position.y = 7;
+      group.add(seat);
+
+      // Backrest (if not a stool)
+      if (!name.includes("Stool")) {
+        const backGeo = new THREE.BoxGeometry(w, 8, 1.2);
+        const backMat = new THREE.MeshStandardMaterial({ color: 0x1e3a8a, roughness: 0.8 });
+        const back = new THREE.Mesh(backGeo, backMat);
+        back.position.set(0, 11.6, -h / 2 + 0.6);
+        group.add(back);
+      }
+
+      // 4 metal legs
+      const legGeo = new THREE.CylinderGeometry(0.5, 0.5, 6.4, 6);
+      const legMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.9, roughness: 0.1 });
+      const offsets = [
+        [-w / 2 + 1, -h / 2 + 1],
+        [w / 2 - 1, -h / 2 + 1],
+        [-w / 2 + 1, h / 2 - 1],
+        [w / 2 - 1, h / 2 - 1],
+      ];
+      offsets.forEach(([ox, oz]) => {
+        const leg = new THREE.Mesh(legGeo, legMat);
+        leg.position.set(ox, 3.2, oz);
+        group.add(leg);
+      });
+    }
+
+    // --- 2. POTTED PLANT MODEL ---
+    else if (name.includes("Plant") || name.includes("Pot")) {
+      // Pot at bottom
+      const potGeo = new THREE.CylinderGeometry(w / 2.2, w / 2.8, 6, 8);
+      const potMat = new THREE.MeshStandardMaterial({ color: 0xca8a04, roughness: 0.9 }); // Terracotta
+      const pot = new THREE.Mesh(potGeo, potMat);
+      pot.position.y = 3;
+      group.add(pot);
+
+      // Stem
+      const stemGeo = new THREE.CylinderGeometry(0.6, 0.6, 8, 6);
+      const stemMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.9 });
+      const stem = new THREE.Mesh(stemGeo, stemMat);
+      stem.position.y = 10;
+      group.add(stem);
+
+      // 3 Spheres of green foliage
+      const leafMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.9 });
+      
+      const fol1 = new THREE.Mesh(new THREE.SphereGeometry(w / 1.8, 8, 8), leafMat);
+      fol1.position.y = 13;
+      group.add(fol1);
+
+      const fol2 = new THREE.Mesh(new THREE.SphereGeometry(w / 2.2, 8, 8), leafMat);
+      fol2.position.set(1.5, 16.5, -0.5);
+      group.add(fol2);
+
+      const fol3 = new THREE.Mesh(new THREE.SphereGeometry(w / 2.8, 8, 8), leafMat);
+      fol3.position.set(-1, 19.5, 1);
+      group.add(fol3);
+    }
+
+    // --- 3. LOCKERS MODEL ---
+    else if (name.includes("Locker")) {
+      const lockerHeight = 26;
+      const lockerGeo = new THREE.BoxGeometry(w, lockerHeight, h);
+      const lockerMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8, roughness: 0.3 }); // Navy slate grey metal
+      const locker = new THREE.Mesh(lockerGeo, lockerMat);
+      locker.position.y = lockerHeight / 2;
+      group.add(locker);
+
+      // Door divides / frames
+      const numDoors = Math.max(1, Math.round(w / 10));
+      for (let i = 0; i < numDoors; i++) {
+        const offsetPct = (i + 0.5) / numDoors - 0.5;
+        const dx = w * offsetPct;
+
+        // Visual metal door handles (small silver boxes on front face +Z)
+        const handleGeo = new THREE.BoxGeometry(0.8, 4, 0.6);
+        const handleMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.9, roughness: 0.1 });
+        const handle = new THREE.Mesh(handleGeo, handleMat);
+        handle.position.set(dx + (w / numDoors) * 0.25, 13, h / 2 + 0.2);
+        group.add(handle);
+
+        // Vent grill slots near the top
+        for (let v = 0; v < 3; v++) {
+          const ventGeo = new THREE.BoxGeometry((w / numDoors) * 0.6, 0.3, 0.2);
+          const ventMat = new THREE.MeshBasicMaterial({ color: 0x111827 });
+          const vent = new THREE.Mesh(ventGeo, ventMat);
+          vent.position.set(dx, 21 + v * 1.2, h / 2 + 0.1);
+          group.add(vent);
+        }
+      }
+    }
+
+    // --- 4. VENDING MACHINE MODEL ---
+    else if (name.includes("Vending")) {
+      const vendHeight = 28;
+      // Main frame
+      const frameGeo = new THREE.BoxGeometry(w, vendHeight, h);
+      const frameMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.3 }); // Retro Red
+      const frame = new THREE.Mesh(frameGeo, frameMat);
+      frame.position.y = vendHeight / 2;
+      group.add(frame);
+
+      // Glass front display
+      const glassGeo = new THREE.BoxGeometry(w - 6, 12, 1.5);
+      const glassMat = new THREE.MeshStandardMaterial({ color: 0x111827, metalness: 0.9, roughness: 0.05 });
+      const glass = new THREE.Mesh(glassGeo, glassMat);
+      glass.position.set(0, 18, h / 2 + 0.2);
+      group.add(glass);
+
+      // Inside products (little colorful boxes behind glass)
+      const prodColors = [0xef4444, 0x10b981, 0xf59e0b, 0x3b82f6];
+      for (let r = 0; r < 3; r++) {
+        for (let c = 0; c < 3; c++) {
+          const col = prodColors[(r + c) % prodColors.length];
+          const prodGeo = new THREE.BoxGeometry(1.5, 2, 0.8);
+          const prodMat = new THREE.MeshStandardMaterial({ color: col });
+          const prod = new THREE.Mesh(prodGeo, prodMat);
+          prod.position.set(-w / 2 + 6 + c * (w / 4), 14 + r * 3, h / 2 + 0.1);
+          group.add(prod);
+        }
+      }
+
+      // Glowing panel banner
+      const glowGeo = new THREE.BoxGeometry(w - 6, 3, 1);
+      const glowMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 1.5 });
+      const glow = new THREE.Mesh(glowGeo, glowMat);
+      glow.position.set(0, 8, h / 2 + 0.2);
+      group.add(glow);
+
+      // Dispenser opening
+      const dispGeo = new THREE.BoxGeometry(w - 6, 3, 1.5);
+      const dispMat = new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.7 });
+      const disp = new THREE.Mesh(dispGeo, dispMat);
+      disp.position.set(0, 3, h / 2 + 0.1);
+      group.add(disp);
+    }
+
+    // --- 5. COUCH / SOFA MODEL ---
+    else if (name.includes("Sofa") || name.includes("Couch") || name.includes("Cushion")) {
+      // Base cushion platform
+      const baseGeo = new THREE.BoxGeometry(w, 4, h);
+      const baseMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
+      const base = new THREE.Mesh(baseGeo, baseMat);
+      base.position.y = 2;
+      group.add(base);
+
+      // Plush seat cushion
+      const plushGeo = new THREE.BoxGeometry(w - 2, 3, h - 2);
+      const plushMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.7 }); // Velvet Red
+      const plush = new THREE.Mesh(plushGeo, plushMat);
+      plush.position.set(0, 5, 0.5);
+      group.add(plush);
+
+      // Backrest
+      const backGeo = new THREE.BoxGeometry(w, 10, 3);
+      const backMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.7 });
+      const back = new THREE.Mesh(backGeo, backMat);
+      back.position.set(0, 8.5, -h / 2 + 1.5);
+      group.add(back);
+
+      // Armrests (left and right)
+      const armGeo = new THREE.BoxGeometry(3, 8, h);
+      const armMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
+      const leftArm = new THREE.Mesh(armGeo, armMat);
+      leftArm.position.set(-w / 2 + 1.5, 5.5, 0);
+      group.add(leftArm);
+
+      const rightArm = new THREE.Mesh(armGeo, armMat);
+      rightArm.position.set(w / 2 - 1.5, 5.5, 0);
+      group.add(rightArm);
+    }
+
+    // --- 6. CABINET / CUPBOARD / SHELF ---
+    else if (name.includes("Cabinet") || name.includes("Shelf") || name.includes("Cupboard") || name.includes("Drawer")) {
+      const cabHeight = 24;
+      const cabGeo = new THREE.BoxGeometry(w, cabHeight, h);
+      const cabMat = new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.8 }); // Rich wood grain tone
+      const cab = new THREE.Mesh(cabGeo, cabMat);
+      cab.position.y = cabHeight / 2;
+      group.add(cab);
+
+      // Horizontal drawer divisions
+      const numDrawers = 3;
+      for (let i = 0; i < numDrawers; i++) {
+        const dy = 4 + i * 7.5;
+        // Draw dividing grooves
+        const grooveGeo = new THREE.BoxGeometry(w - 2, 0.4, 0.4);
+        const grooveMat = new THREE.MeshBasicMaterial({ color: 0x27272a });
+        const groove = new THREE.Mesh(grooveGeo, grooveMat);
+        groove.position.set(0, dy + 3.5, h / 2 + 0.1);
+        group.add(groove);
+
+        // Silver drawer handle
+        const handleGeo = new THREE.BoxGeometry(w * 0.4, 0.6, 0.6);
+        const handleMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.9 });
+        const handle = new THREE.Mesh(handleGeo, handleMat);
+        handle.position.set(0, dy + 1.8, h / 2 + 0.2);
+        group.add(handle);
+      }
+    }
+
+    // --- 7. CUBICLE DESK MODEL ---
+    else if (name.includes("Cubicle")) {
+      const wallHeight = 16;
+      const wallMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.7 }); // Office grey partitions
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.8 }); // Oak desk surface
+
+      // Left panel
+      const leftWall = new THREE.Mesh(new THREE.BoxGeometry(1.6, wallHeight, h), wallMat);
+      leftWall.position.set(-w / 2 + 0.8, wallHeight / 2, 0);
+      group.add(leftWall);
+
+      // Right panel
+      const rightWall = new THREE.Mesh(new THREE.BoxGeometry(1.6, wallHeight, h), wallMat);
+      rightWall.position.set(w / 2 - 1.6, wallHeight / 2, 0);
+      group.add(rightWall);
+
+      // Back panel
+      const backWall = new THREE.Mesh(new THREE.BoxGeometry(w, wallHeight, 1.6), wallMat);
+      backWall.position.set(0, wallHeight / 2, -h / 2 + 0.8);
+      group.add(backWall);
+
+      // Oak Desk slab inside
+      const deskGeo = new THREE.BoxGeometry(w - 4, 1.2, h - 3);
+      const desk = new THREE.Mesh(deskGeo, woodMat);
+      desk.position.set(0, 10, 1);
+      group.add(desk);
+
+      // Office PC monitor on the desk
+      const pcBase = new THREE.Mesh(new THREE.BoxGeometry(3, 0.4, 3), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
+      pcBase.position.set(0, 10.8, -h / 2 + 4);
+      group.add(pcBase);
+
+      const pcScreen = new THREE.Mesh(new THREE.BoxGeometry(8, 5, 0.6), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
+      pcScreen.position.set(0, 13.5, -h / 2 + 4);
+      group.add(pcScreen);
+
+      // Glowing screen face
+      const pcGlow = new THREE.Mesh(new THREE.BoxGeometry(7.2, 4.2, 0.2), new THREE.MeshStandardMaterial({ color: 0x0284c7, emissive: 0x0284c7, emissiveIntensity: 0.4 }));
+      pcGlow.position.set(0, 13.5, -h / 2 + 4.4);
+      group.add(pcGlow);
+
+      // Keyboard
+      const kb = new THREE.Mesh(new THREE.BoxGeometry(6, 0.2, 2.2), new THREE.MeshStandardMaterial({ color: 0x334155 }));
+      kb.position.set(0, 10.7, 1.5);
+      group.add(kb);
+    }
+
+    // --- 8. WASHING SINKS MODEL ---
+    else if (name.includes("Sink") || name.includes("Washing")) {
+      const sinkHeight = 12;
+      // Main counter base
+      const counterGeo = new THREE.BoxGeometry(w, sinkHeight, h);
+      const counterMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.4 }); // Grey-white ceramic look
+      const counter = new THREE.Mesh(counterGeo, counterMat);
+      counter.position.y = sinkHeight / 2;
+      group.add(counter);
+
+      // Steel basins (we can put 2 basins if wide, or 1 if narrow)
+      const numBasins = w > 30 ? 2 : 1;
+      const steelMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.9, roughness: 0.2 });
+      for (let i = 0; i < numBasins; i++) {
+        const offsetPct = numBasins === 2 ? (i === 0 ? -0.25 : 0.25) : 0;
+        const dx = w * offsetPct;
+
+        // Basin flat metal overlay
+        const basin = new THREE.Mesh(new THREE.BoxGeometry(w / (numBasins + 0.8), 0.2, h - 6), steelMat);
+        basin.position.set(dx, sinkHeight + 0.1, 0);
+        group.add(basin);
+
+        // Faucet pipe
+        const faucetGeo = new THREE.CylinderGeometry(0.3, 0.3, 3, 6);
+        const faucetMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, metalness: 0.9, roughness: 0.1 });
+        const faucet = new THREE.Mesh(faucetGeo, faucetMat);
+        faucet.position.set(dx, sinkHeight + 1.6, -h / 2 + 2);
+        group.add(faucet);
+
+        const tapGeo = new THREE.BoxGeometry(1.5, 0.3, 0.3);
+        const tap = new THREE.Mesh(tapGeo, faucetMat);
+        tap.position.set(dx, sinkHeight + 3.1, -h / 2 + 2.6);
+        group.add(tap);
+      }
+    }
+
+    // --- 9. STALL / TOILET PARTITION MODEL ---
+    else if (name.includes("Partition") || name.includes("Stall")) {
+      // Panel hovering above ground with chrome feet
+      const panelHeight = 20;
+      const panelGeo = new THREE.BoxGeometry(w, panelHeight, h);
+      const panelMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.6 }); // Privacy partition
+      const panel = new THREE.Mesh(panelGeo, panelMat);
+      panel.position.y = 14; // Hovering with 4 units of ground clearance
+      group.add(panel);
+
+      // Support metal legs
+      const legGeo = new THREE.CylinderGeometry(0.5, 0.5, 4, 6);
+      const legMat = new THREE.MeshStandardMaterial({ color: 0xd1d5db, metalness: 0.9, roughness: 0.1 });
+      const offsets = [-w / 2 + 2, w / 2 - 2];
+      offsets.forEach((ox) => {
+        const leg = new THREE.Mesh(legGeo, legMat);
+        leg.position.set(ox, 2, 0);
+        group.add(leg);
+      });
+    }
+
+    // --- 10. BENCH MODEL ---
+    else if (name.includes("Bench")) {
+      // Wood plank seat
+      const seatGeo = new THREE.BoxGeometry(w, 1.2, h);
+      const seatMat = new THREE.MeshStandardMaterial({ color: 0x7c2d12, roughness: 0.7 }); // Mahogany wood
+      const seat = new THREE.Mesh(seatGeo, seatMat);
+      seat.position.y = 6;
+      group.add(seat);
+
+      // 2 black metal legs
+      const legGeo = new THREE.BoxGeometry(1.8, 6, h - 2);
+      const legMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.8 });
+      const offsets = [-w / 2 + 3, w / 2 - 3];
+      offsets.forEach((ox) => {
+        const leg = new THREE.Mesh(legGeo, legMat);
+        leg.position.set(ox, 3, 0);
+        group.add(leg);
+      });
+    }
+
+    // --- 11. BARRICADE / BARRICADES / DEBRIS / PLANK BLOCKS ---
+    else if (
+      name.includes("Barricade") ||
+      name.includes("Blockade") ||
+      name.includes("Debris") ||
+      name.includes("Flipped") ||
+      name.includes("Pile")
+    ) {
+      // Stack of rotated crates and cross wood planks
+      // Crate 1
+      const crate1Geo = new THREE.BoxGeometry(10, 10, 10);
+      const crate1Mat = new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.9 }); // Dark pine
+      const crate1 = new THREE.Mesh(crate1Geo, crate1Mat);
+      crate1.position.set(-w / 4, 5, 0);
+      crate1.rotation.set(0.1, 0.25, -0.05);
+      group.add(crate1);
+
+      // Crate 2 (if wide)
+      if (w > 15) {
+        const crate2Geo = new THREE.BoxGeometry(8, 8, 8);
+        const crate2Mat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.95 }); // Light pine
+        const crate2 = new THREE.Mesh(crate2Geo, crate2Mat);
+        crate2.position.set(w / 4, 4, 1);
+        crate2.rotation.set(-0.15, -0.3, 0.1);
+        group.add(crate2);
+      }
+
+      // Crossed wood barrier board
+      const boardGeo = new THREE.BoxGeometry(w + 2, 2.5, 1);
+      const boardMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.9 });
+      const board = new THREE.Mesh(boardGeo, boardMat);
+      board.position.set(0, 8.5, 4.5);
+      board.rotation.z = -0.12;
+      group.add(board);
+
+      // Safety yellow-orange highlights on front barrier face
+      const stripeGeo = new THREE.BoxGeometry(w - 2, 1.2, 1.1);
+      const stripeMat = new THREE.MeshBasicMaterial({ color: 0xea580c }); // Safety Orange
+      const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+      stripe.position.set(0, 8.5, 4.52);
+      stripe.rotation.z = -0.12;
+      group.add(stripe);
+    }
+
+    // --- 12. DESK / TABLE MODEL (CLASSROOM DESK, TEACHER DESK, STUDY TABLE, DESK) ---
+    else if (name.includes("Desk") || name.includes("Table") || name.includes("Study")) {
+      // Table top surface
+      const topGeo = new THREE.BoxGeometry(w, 1.6, h);
+      const topMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.75 }); // Classroom wood tabletop
+      const top = new THREE.Mesh(topGeo, topMat);
+      top.position.y = 13;
+      group.add(top);
+
+      // Support metal panels or legs depending on width
+      const legGeo = new THREE.BoxGeometry(1.2, 12.2, 1.2);
+      const legMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8, roughness: 0.3 }); // Sleek metal frame
+      const offsets = [
+        [-w / 2 + 1, -h / 2 + 1],
+        [w / 2 - 1, -h / 2 + 1],
+        [-w / 2 + 1, h / 2 - 1],
+        [w / 2 - 1, h / 2 - 1],
+      ];
+      offsets.forEach(([ox, oz]) => {
+        const leg = new THREE.Mesh(legGeo, legMat);
+        leg.position.set(ox, 6.1, oz);
+        group.add(leg);
+      });
+
+      // Small details: drawer/backboard under teacher table
+      if (w > 22) {
+        const backBoardGeo = new THREE.BoxGeometry(w - 4, 8, 0.8);
+        const backBoard = new THREE.Mesh(backBoardGeo, legMat);
+        backBoard.position.set(0, 9, -h / 2 + 1.2);
+        group.add(backBoard);
+      }
+    }
+
+    // --- 13. CHEST / STORAGE BOX MODEL ---
+    else if (name.includes("Box") || name.includes("Chest") || name.includes("Trunk")) {
+      const boxGeo = new THREE.BoxGeometry(w, 12, h);
+      const boxMat = new THREE.MeshStandardMaterial({ color: 0x7c2d12, roughness: 0.95 }); // Heavy wood chest
+      const box = new THREE.Mesh(boxGeo, boxMat);
+      box.position.y = 6;
+      group.add(box);
+
+      // Lid
+      const lidGeo = new THREE.BoxGeometry(w + 1, 2, h + 1);
+      const lid = new THREE.Mesh(lidGeo, boxMat);
+      lid.position.y = 13;
+      group.add(lid);
+
+      // Brass corner protectors
+      const cornerGeo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
+      const brassMat = new THREE.MeshStandardMaterial({ color: 0xeab308, metalness: 0.9, roughness: 0.1 });
+      const cornerOffs = [
+        [-w / 2, 0, -h / 2],
+        [w / 2, 0, -h / 2],
+        [-w / 2, 0, h / 2],
+        [w / 2, 0, h / 2],
+        [-w / 2, 12, -h / 2],
+        [w / 2, 12, -h / 2],
+        [-w / 2, 12, h / 2],
+        [w / 2, 12, h / 2],
+      ];
+      cornerOffs.forEach(([ox, oy, oz]) => {
+        const corner = new THREE.Mesh(cornerGeo, brassMat);
+        corner.position.set(ox, oy, oz);
+        group.add(corner);
+      });
+    }
+
+    // --- 14. DEFAULT GENERIC MODEL (CLEAN BRUTALIST SLATE) ---
+    else {
+      const boxGeo = new THREE.BoxGeometry(w, 24, h);
+      const boxMat = new THREE.MeshStandardMaterial({
+        color: 0x1e293b,
+        metalness: 0.3,
+        roughness: 0.6,
+      });
+      const boxMesh = new THREE.Mesh(boxGeo, boxMat);
+      boxMesh.position.y = 12;
+      group.add(boxMesh);
+
+      // Light cyan blueprint grid highlights on top edge of generic box blocks
+      const barGeo = new THREE.BoxGeometry(w - 2, 0.4, h - 2);
+      const barMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.4 });
+      const cyanTop = new THREE.Mesh(barGeo, barMat);
+      cyanTop.position.set(0, 12.1, 0);
+      boxMesh.add(cyanTop);
+    }
+
+    // Traverse all children of the model group and apply shadow properties
+    group.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+
+    return group;
+  };
+
   const rebuildObstacles3D = () => {
     const obstaclesGroup = obstaclesGroupRef.current;
     if (!obstaclesGroup) return;
@@ -2600,55 +3080,9 @@ export function GameCanvas({
       const width = obs.width;
       const height = obs.height;
       
-      const boxGeo = new THREE.BoxGeometry(width, 24, height);
-      
-      let color = 0x1e293b; 
-      let metalness = 0.3;
-      let roughness = 0.5;
-      let isHazard = false;
-
-      if (
-        obs.name?.includes("Barricade") ||
-        obs.name?.includes("Blockade") ||
-        obs.name?.includes("Debris") ||
-        obs.name?.includes("Flipped") ||
-        obs.name?.includes("Pile")
-      ) {
-        color = 0x111827; 
-        metalness = 0.8;
-        roughness = 0.2;
-        isHazard = true;
-      } else if (obs.name?.includes("Study")) {
-        color = 0x0f172a; 
-        metalness = 0.5;
-        roughness = 0.1;
-      }
-
-      const boxMat = new THREE.MeshStandardMaterial({
-        color: color,
-        metalness: metalness,
-        roughness: roughness,
-      });
-
-      const boxMesh = new THREE.Mesh(boxGeo, boxMat);
-      boxMesh.position.set(obs.x + width / 2, 12, obs.y + height / 2);
-      boxMesh.receiveShadow = true;
-      boxMesh.castShadow = true;
-      obstaclesGroup.add(boxMesh);
-
-      if (isHazard) {
-        const barGeo = new THREE.BoxGeometry(width - 4, 2, 2);
-        const barMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
-        const warningBar = new THREE.Mesh(barGeo, barMat);
-        warningBar.position.set(0, 12.2, 0);
-        boxMesh.add(warningBar);
-      } else {
-        const barGeo = new THREE.BoxGeometry(width - 2, 1, height - 2);
-        const barMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.4 });
-        const cyanTop = new THREE.Mesh(barGeo, barMat);
-        cyanTop.position.set(0, 12.1, 0);
-        boxMesh.add(cyanTop);
-      }
+      const modelGroup = createModelForObstacle(obs);
+      modelGroup.position.set(obs.x + width / 2, 0, obs.y + height / 2);
+      obstaclesGroup.add(modelGroup);
     });
   };
 
@@ -2812,7 +3246,7 @@ export function GameCanvas({
     const playerMesh = playerMeshRef.current;
     if (playerMesh) {
       playerMesh.position.set(p.x, 0, p.y);
-      playerMesh.rotation.y = -p.angle;
+      playerMesh.rotation.y = -p.angle + Math.PI / 2;
 
       // Dynamic limb swing animations
       const isMoving = p.isMoving;
@@ -2947,7 +3381,7 @@ export function GameCanvas({
       const flashlight = playerLightRef.current;
       if (flashlight) {
         const targetObj = flashlight.target;
-        targetObj.position.set(Math.cos(p.angle) * 100, -15, Math.sin(p.angle) * 100);
+        targetObj.position.set(0, -15, 100);
       }
     }
 
@@ -2977,7 +3411,7 @@ export function GameCanvas({
         const tMesh = tobbysGroup.children[idx] as THREE.Group;
         if (tMesh) {
           tMesh.position.set(t.x, 0, t.y);
-          tMesh.rotation.y = -t.angle;
+          tMesh.rotation.y = -t.angle + Math.PI / 2;
 
           // Dynamic limb swing animations
           const isTobbyMoving = t.isMoving;
@@ -3042,7 +3476,7 @@ export function GameCanvas({
           const spot = tMesh.children[tMesh.children.length - 2] as THREE.SpotLight;
           if (spot) {
             const targetObj = tMesh.children[tMesh.children.length - 1];
-            targetObj.position.set(Math.cos(t.angle) * 120, -32, Math.sin(t.angle) * 120);
+            targetObj.position.set(0, -32, 120);
             
             if (t.aiState === AIState.CHASING) {
               spot.color.setHex(0xff0000);
