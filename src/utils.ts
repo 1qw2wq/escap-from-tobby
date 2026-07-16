@@ -4,9 +4,17 @@
  */
 
 import { ROOMS, DOORWAYS, ALL_OBSTACLES } from "./data";
-import { GameObstacle, Doorway } from "./types";
+import { GameObstacle, Doorway, GameRoom } from "./types";
 
 let currentActiveFloor = 5;
+
+export let dynamicRooms: GameRoom[] = [...ROOMS];
+export let dynamicDoorways: Doorway[] = [...DOORWAYS];
+
+export function setDynamicLayout(rooms: GameRoom[], doorways: Doorway[]) {
+  dynamicRooms = rooms;
+  dynamicDoorways = doorways;
+}
 
 export let currentFloorObstacles: GameObstacle[] = [];
 export let hasInitializedObstacles = false;
@@ -283,7 +291,7 @@ export function isLocationWalkable(x: number, y: number, r: number = 12): boolea
   }
 
   // 1. Check if we are inside any doorway (using expanded horizontal boundaries to permit smooth travel)
-  for (const d of DOORWAYS) {
+  for (const d of dynamicDoorways) {
     const isClassroomDoor = d.minX === 360; // connects left to hallway
     const padX = isClassroomDoor ? r : r;
     
@@ -301,7 +309,7 @@ export function isLocationWalkable(x: number, y: number, r: number = 12): boolea
 
   // 2. Check if we are inside any room with the proper safety radius
   let insideAnyRoom = false;
-  for (const room of ROOMS) {
+  for (const room of dynamicRooms) {
     if (
       x >= room.minX + r &&
       x <= room.maxX - r &&
@@ -335,13 +343,13 @@ export function isLocationWalkable(x: number, y: number, r: number = 12): boolea
  * Returns the room ID the coordinate is currently occupying, or "Outside" / "Hallway" etc.
  */
 export function getRoomAt(x: number, y: number): string {
-  for (const d of DOORWAYS) {
+  for (const d of dynamicDoorways) {
     if (x >= d.minX && x <= d.maxX && y >= d.minY && y <= d.maxY) {
       return "Doorway";
     }
   }
-  for (const r of ROOMS) {
-    if (x >= r.minX && x <= r.maxX && y >= r.minY && y <= r.maxY) {
+  for (const r of dynamicRooms) {
+    if (x >= r.minX && x <= r.maxX && y >= r.minY && r.maxY >= y) {
       return r.id;
     }
   }

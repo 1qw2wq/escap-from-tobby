@@ -7,9 +7,10 @@ import React, { useRef, useState, useEffect } from "react";
 import * as THREE from "three";
 import { CharacterClass, PlayerState, TobbyState, AIState, PuddleState, SoundWaveState, MedicineItemState, GameItemState, ItemType, DecoyCatnipState, GameObstacle } from "../types";
 import { ROOMS, ALL_OBSTACLES, MAP_SVG, TOBBY_SVG, RUNNER_SVG, MARCUS_SVG, FAIBE_SVG, RUNNER_WALK1_SVG, RUNNER_WALK2_SVG, MARCUS_WALK1_SVG, MARCUS_WALK2_SVG, FAIBE_WALK1_SVG, FAIBE_WALK2_SVG, TOBBY_WALK1_SVG, TOBBY_WALK2_SVG } from "../data";
-import { isLocationWalkable, getRoomAt, checkLineOfSight, playScreamSound, playRamSound, playPacifySound, playDamageSound, playSoundWaveAttack, playFootstepSound, playActiveAbilityRunner, playMedicinePickupSound, setCurrentActiveFloor, getObstaclesForFloor, generateFloor1Maze, currentFloorObstacles, setCurrentFloorObstacles, resetInitializedObstacles } from "../utils";
+import { isLocationWalkable, getRoomAt, checkLineOfSight, playScreamSound, playRamSound, playPacifySound, playDamageSound, playSoundWaveAttack, playFootstepSound, playActiveAbilityRunner, playMedicinePickupSound, setCurrentActiveFloor, getObstaclesForFloor, generateFloor1Maze, currentFloorObstacles, setCurrentFloorObstacles, resetInitializedObstacles, setDynamicLayout, dynamicRooms } from "../utils";
 import { Shield, Sparkles, AlertTriangle, ArrowRight, Home, RefreshCw, Volume2, VolumeX, Eye, Flame, Heart, Zap, BookOpen } from "lucide-react";
 import { SurvivalGuide } from "./SurvivalGuide";
+import { getOrGenerateCampaign, drawCampaignMapToCanvas, MAP_WIDTH, MAP_HEIGHT, NUM_WINGS } from "../mapGenerator";
 
 const jointAnchors = {
   RUNNER: { ll: "175 420", rl: "225 420", la: "150 260", ra: "250 260", t: "200 340", h: "200 195" },
@@ -180,6 +181,9 @@ export function GameCanvas({
   const isMouseDownRef = useRef<boolean>(false);
   const puddleDamageTimerRef = useRef<number>(0);
 
+  // Keep track of breakable obstacle HP state
+  const obstacleHpRef = useRef<Record<string, number>>({});
+
   // Load vector layout textures inside cache
   const imagesCachedRef = useRef<{
     map: HTMLImageElement;
@@ -194,10 +198,12 @@ export function GameCanvas({
   } | null>(null);
 
   const initializeLevel = () => {
-    // Set the global active floor layout in utils
-    if (currentFloor === 1) {
-      generateFloor1Maze();
-    }
+    // 1. Get or generate the consistent procedural campaign
+    const campaign = getOrGenerateCampaign();
+    const floorMap = campaign.floors[currentFloor];
+
+    // 2. Load dynamic rooms and doorways into the collision / walkability engine
+    setDynamicLayout(floorMap.rooms, floorMap.doorways);
     setCurrentActiveFloor(currentFloor);
 
     // Save outgoing floor's state before switching!
@@ -208,21 +214,21 @@ export function GameCanvas({
         puddles: [...puddlesRef.current],
         obstacles: [...currentFloorObstacles],
       };
+      // Reset obstacle HP tracking when changing floors
+      obstacleHpRef.current = {};
     }
 
-    // Determine player specs
+    // Determine player specs and starting positions
     const p = playerRef.current;
     
-    let px = 625; // Default Staircase A (Top-Right)
-    let py = 95;
+    let px = floorMap.spawnX;
+    let py = floorMap.spawnY;
 
-    // Player spawns inside classrooms on floor 5 at start of game;
-    // otherwise based on transition direction.
     if (previousFloorRef.current === -1) {
       if (currentFloor === 5) {
         let attempts = 0;
         let found = false;
-        const validRooms = ROOMS.filter(r => ["C1", "C2", "C3", "C4", "C5"].includes(r.id));
+        const validRooms = floorMap.rooms.filter(r => r.id.startsWith("C_W0_")); // Start in a Wing 0 classroom
         while (attempts < 200 && !found) {
           const room = validRooms[Math.floor(Math.random() * validRooms.length)];
           const rx = room.minX + 25 + Math.random() * (room.maxX - room.minX - 50);
@@ -236,13 +242,13 @@ export function GameCanvas({
         }
       }
     } else if (currentFloor > previousFloorRef.current) {
-      // Transitioned UP! Spawn at Staircase B (Y ~ 650)
-      px = 625;
-      py = 650;
+      // Transitioned UP! Spawn at escape stairs Staircase B (Wing 4)
+      px = floorMap.exitX;
+      py = floorMap.exitY;
     } else {
-      // Transitioned DOWN! Spawn at Staircase A (Y ~ 95)
-      px = 625;
-      py = 95;
+      // Transitioned DOWN! Spawn at Staircase A (Wing 0)
+      px = floorMap.spawnX;
+      py = floorMap.spawnY;
     }
 
     p.x = px;
@@ -251,12 +257,10 @@ export function GameCanvas({
     const defaultMaxHp = characterClass === CharacterClass.MARCUS ? 30 : characterClass === CharacterClass.RUNNER ? 20 : 15;
     p.maxHp = defaultMaxHp;
     
-    // The player's blood points (hp) should not refresh when they go down a level!
-    // Initialize to full only on a brand new game, or if current health is 0 or unassigned.
+    // Maintain consistent blood points across level transitions
     if (freshGameRef.current || !p.hp || p.hp <= 0) {
       p.hp = defaultMaxHp;
     } else {
-      // Keep existing blood points across level transitions
       p.hp = Math.min(p.hp, p.maxHp);
     }
     p.speed = characterClass === CharacterClass.RUNNER ? 75 : 50;
@@ -265,7 +269,7 @@ export function GameCanvas({
     p.abilityActiveTime = 0;
     p.isRamming = false;
     p.isPacifying = false;
-    p.burstEnergy = p.burstEnergy || 100; // persist through floors but start at 100 on first load
+    p.burstEnergy = p.burstEnergy || 100;
     p.isBurstActive = false;
     setPlayerBurstEnergy(p.burstEnergy || 100);
     p.scratchDotDuration = 0;
@@ -300,6 +304,20 @@ export function GameCanvas({
     puddlesRef.current = [];
     soundWavesRef.current = [];
 
+    // Draw the procedural map to our cached canvas dynamically!
+    const cache = imagesCachedRef.current;
+    if (cache) {
+      // Instead of an HTMLImageElement, let's create/maintain an offscreen canvas in cache.map!
+      let mapCanvas = cache.map as unknown as HTMLCanvasElement;
+      if (!mapCanvas || !(mapCanvas instanceof HTMLCanvasElement)) {
+        mapCanvas = document.createElement("canvas");
+        mapCanvas.width = 4500;
+        mapCanvas.height = 1000;
+        cache.map = mapCanvas as unknown as HTMLImageElement;
+      }
+      drawCampaignMapToCanvas(mapCanvas, floorMap, currentFloor);
+    }
+
     let hasPersistedData = false;
     if (floorDataRef.current[currentFloor]) {
       hasPersistedData = true;
@@ -309,122 +327,119 @@ export function GameCanvas({
       medicinesRef.current = preserved.medicines;
       puddlesRef.current = preserved.puddles;
       
-      const activeObs = preserved.obstacles || getObstaclesForFloor(currentFloor);
+      const activeObs = preserved.obstacles || floorMap.obstacles;
       setCurrentFloorObstacles(activeObs);
     }
 
     if (!hasPersistedData) {
-      const activeObs = getObstaclesForFloor(currentFloor);
+      const activeObs = floorMap.obstacles;
       setCurrentFloorObstacles(activeObs);
-      const spawnRooms = ["C1", "C2", "C3", "C4", "C5", "Office1", "Office2", "Toilets", "Hallway"];
-      
-      // Determine a balanced, localized survival threat level: 5 to 7 Tobbys per floor.
-      const totalTobbys = 5 + Math.floor(Math.random() * 3); // random selection of 5, 6 or 7 Tobbys
-      const assignedRooms: string[] = [];
-      for (let i = 0; i < totalTobbys; i++) {
-        // Select random room evenly from potential spawn quadrants
-        assignedRooms.push(spawnRooms[Math.floor(Math.random() * spawnRooms.length)]);
-      }
 
+      // Procedural, Wing-by-wing spawning of Tobby student clones!
+      // This distributes them evenly across all 5 wings and guarantees a consistent, scaled difficulty.
       const tobbys: TobbyState[] = [];
       let tobbyId = 1;
 
-      for (let i = 0; i < totalTobbys; i++) {
-        const roomId = assignedRooms[i];
-        const room = ROOMS.find((r) => r.id === roomId);
-        if (!room) continue;
+      for (let w = 0; w < NUM_WINGS; w++) {
+        const wingRooms = floorMap.rooms.filter(r => r.id.includes(`W${w}`));
+        const wingTobbysCount = 5 + Math.floor(Math.random() * 3); // 5 to 7 Tobbys per wing
 
-        let tx = room.minX + room.maxX / 2;
-        let ty = room.minY + room.maxY / 2;
-        let attempts = 0;
-        while (attempts < 150) {
-          tx = room.minX + 25 + Math.random() * (room.maxX - room.minX - 50);
-          ty = room.minY + 25 + Math.random() * (room.maxY - room.minY - 50);
+        for (let i = 0; i < wingTobbysCount; i++) {
+          const room = wingRooms[Math.floor(Math.random() * wingRooms.length)];
+          if (!room) continue;
 
-          if (isLocationWalkable(tx, ty, 10)) {
-            // Keep clear of the player starting zone
-            const distToSpawn = Math.sqrt((tx - p.x) ** 2 + (ty - p.y) ** 2);
-            if (distToSpawn > 120) {
-              break;
+          let tx = (room.minX + room.maxX) / 2;
+          let ty = (room.minY + room.maxY) / 2;
+          let attempts = 0;
+          while (attempts < 150) {
+            tx = room.minX + 25 + Math.random() * (room.maxX - room.minX - 50);
+            ty = room.minY + 25 + Math.random() * (room.maxY - room.minY - 50);
+
+            if (isLocationWalkable(tx, ty, 10)) {
+              const distToSpawn = Math.sqrt((tx - p.x) ** 2 + (ty - p.y) ** 2);
+              if (distToSpawn > 120) {
+                break;
+              }
             }
+            attempts++;
           }
-          attempts++;
+
+          const isHallway = room.id.startsWith("H_W");
+          const isStationary = !isHallway && (i % 3 === 0); // ~33% of indoor Tobbys remain stationary
+          tobbys.push({
+            id: tobbyId++,
+            x: tx,
+            y: ty,
+            angle: Math.random() * Math.PI * 2,
+            aiState: AIState.IDLE,
+            patrolTargetX: tx,
+            patrolTargetY: ty,
+            speed: isHallway ? 33 + Math.random() * 8 : 30 + Math.random() * 10,
+            stareTimer: 0,
+            hp: 6,
+            maxHp: 6,
+            playerHitCooldown: 0,
+            flashTime: 0,
+            hitCooldown: 0,
+            scratchCooldown: 0,
+            waterSpillCooldown: 0,
+            stareCooldown: 0,
+            scarySoundCooldown: 0,
+            wiggleOffset: Math.random() * Math.PI * 2,
+            isHallwaySpecial: isHallway,
+            isStationary,
+          });
         }
-
-        const isHallway = roomId === "Hallway";
-        const isStationary = !isHallway && (i % 3 === 0); // ~33% of indoor Tobbys remain stationary
-        tobbys.push({
-          id: tobbyId++,
-          x: tx,
-          y: ty,
-          angle: Math.random() * Math.PI * 2,
-          aiState: AIState.IDLE,
-          patrolTargetX: tx,
-          patrolTargetY: ty,
-          speed: isHallway ? 33 + Math.random() * 8 : 30 + Math.random() * 10,
-          stareTimer: 0,
-          hp: 6,
-          maxHp: 6,
-          playerHitCooldown: 0,
-          flashTime: 0,
-          hitCooldown: 0,
-          scratchCooldown: 0,
-          waterSpillCooldown: 0,
-          stareCooldown: 0,
-          scarySoundCooldown: 0,
-          wiggleOffset: Math.random() * Math.PI * 2,
-          isHallwaySpecial: isHallway,
-          isStationary,
-        });
       }
-
       tobbysRef.current = tobbys;
       setTobbyCount(tobbys.length);
 
-      // Spawn items (Medicine kits, Catnip decoys, Hyper cans, EMP core items) in rooms
+      // Spawn items (Medicine kits, Catnip decoys, Hyper cans, EMP core items) dynamically in non-corridor/non-stairs rooms
       const items: GameItemState[] = [];
       let itemId = 1;
 
-      const spawnPool = [
-        { type: ItemType.MEDICINE, rooms: ["C1", "C2", "C3", "C4", "C5", "Office1", "Office2", "Toilets"] },
-        { type: ItemType.CATNIP, rooms: ["C1", "C2", "C3", "C4", "C5", "Office2"] },
-        { type: ItemType.ENERGY_CAN, rooms: ["Office1", "Office2", "Toilets", "C3", "C5"] },
-        { type: ItemType.EMP, rooms: ["Office1", "Office2", "Toilets", "C2", "C4"] },
-      ];
+      const itemTypes = [ItemType.MEDICINE, ItemType.CATNIP, ItemType.ENERGY_CAN, ItemType.EMP];
+      
+      floorMap.rooms.forEach((room) => {
+        if (room.id.startsWith("Stair") || room.id.startsWith("Passage")) return;
 
-      spawnPool.forEach((itemDef) => {
-        itemDef.rooms.forEach((roomId) => {
-          // Spawn one of this item in the room with some probability!
-          const spawnChance = itemDef.type === ItemType.MEDICINE ? 0.75 : 0.45;
+        itemTypes.forEach((itemType) => {
+          let spawnChance = 0.08;
+          if (itemType === ItemType.MEDICINE) {
+            spawnChance = room.id.startsWith("C_W") ? 0.35 : 0.45;
+          } else if (itemType === ItemType.CATNIP) {
+            spawnChance = 0.15;
+          } else if (itemType === ItemType.ENERGY_CAN) {
+            spawnChance = 0.15;
+          } else if (itemType === ItemType.EMP) {
+            spawnChance = 0.12;
+          }
+
           if (Math.random() < spawnChance) {
-            const r = ROOMS.find((room) => room.id === roomId);
-            if (r) {
-              let attempts = 0;
-              let spawned = false;
-              while (attempts < 100 && !spawned) {
-                const mx = r.minX + 30 + Math.random() * (r.maxX - r.minX - 60);
-                const my = r.minY + 30 + Math.random() * (r.maxY - r.minY - 60);
-                if (isLocationWalkable(mx, my, 12)) {
-                  const distToSpawn = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
-                  if (distToSpawn > 50) {
-                    items.push({
-                      id: itemId++,
-                      type: itemDef.type,
-                      x: mx,
-                      y: my,
-                      roomId: roomId,
-                      pickedUp: false,
-                    });
-                    spawned = true;
-                  }
+            let attempts = 0;
+            let spawned = false;
+            while (attempts < 100 && !spawned) {
+              const mx = room.minX + 30 + Math.random() * (room.maxX - room.minX - 60);
+              const my = room.minY + 30 + Math.random() * (room.maxY - room.minY - 60);
+              if (isLocationWalkable(mx, my, 12)) {
+                const distToSpawn = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
+                if (distToSpawn > 50) {
+                  items.push({
+                    id: itemId++,
+                    type: itemType,
+                    x: mx,
+                    y: my,
+                    roomId: room.id,
+                    pickedUp: false,
+                  });
+                  spawned = true;
                 }
-                attempts++;
               }
+              attempts++;
             }
           }
         });
       });
-
       medicinesRef.current = items;
     }
 
@@ -452,12 +467,34 @@ export function GameCanvas({
 
     previousFloorRef.current = currentFloor;
 
-    // Synchronize Three.js scene structures
+    // Synchronize Three.js scene structures dynamically
     setTimeout(() => {
       if (threeSceneRef.current) {
+        // Re-draw/Update Three.js floor mesh CanvasTexture to the new floor's blueprint!
+        const floorMesh = threeSceneRef.current.getObjectByName("floorMesh") as THREE.Mesh | null;
+        if (floorMesh && floorMesh.material) {
+          const texCanvas = document.createElement("canvas");
+          texCanvas.width = 4500;
+          texCanvas.height = 1000;
+          const tCtx = texCanvas.getContext("2d");
+          if (tCtx && cache && cache.map) {
+            tCtx.fillStyle = "#020617";
+            tCtx.fillRect(0, 0, 4500, 1000);
+            tCtx.drawImage(cache.map, 0, 0, 4500, 1000);
+          }
+          const floorTex = new THREE.CanvasTexture(texCanvas);
+          const mat = floorMesh.material as THREE.MeshStandardMaterial;
+          if (mat.map) {
+            mat.map.dispose();
+          }
+          mat.map = floorTex;
+          mat.needsUpdate = true;
+        }
+
         rebuildObstacles3D();
         buildRealWalls3D();
         addCeilingLights3D();
+
         if (playerMeshRef.current && threeSceneRef.current) {
           threeSceneRef.current.remove(playerMeshRef.current);
           const playerGroup = createPlayer3DMesh();
@@ -929,12 +966,44 @@ export function GameCanvas({
   const checkObstacleBreaking = (nextX: number, nextY: number, radius: number): boolean => {
     const p = playerRef.current;
     
-    // Player must be moving fast (Burst active or Marcus ramming) to break blocks
-    const isSpeeding = p.isBurstActive || p.isRamming;
-    if (!isSpeeding) return false;
+    // Player must be actively moving to hit/chip/break blocks
+    if (!p.isMoving) return false;
 
     let brokenAny = false;
     const remainingObs: GameObstacle[] = [];
+
+    // Base damage per physics frame (Type Difference)
+    let baseDamage = 2;
+    if (characterClass === CharacterClass.MARCUS) {
+      baseDamage = p.isRamming ? 35 : 12; // Heavy type deals massive impact damage
+    } else if (characterClass === CharacterClass.RUNNER) {
+      baseDamage = 5; // Swift type
+    } else if (characterClass === CharacterClass.FAIBE) {
+      baseDamage = 4; // Magical type
+    }
+
+    // Speed Difference multiplier
+    let speedMult = 1.0;
+    if (p.isRamming) {
+      speedMult = 4.0;
+    } else if (p.isBurstActive) {
+      speedMult = 2.5; // Fast sprint deals much higher impact damage
+    }
+
+    // Check if slowed down by water puddle debuff
+    let inPuddle = false;
+    for (const puddle of puddlesRef.current) {
+      const distToPuddle = Math.sqrt((p.x - puddle.x) ** 2 + (p.y - puddle.y) ** 2);
+      if (distToPuddle <= puddle.radius) {
+        inPuddle = true;
+        break;
+      }
+    }
+    if (inPuddle) {
+      speedMult *= 0.5; // Slow movement decreases block breaking potential/impact!
+    }
+
+    const damageDealt = baseDamage * speedMult;
 
     for (const obs of currentFloorObstacles) {
       const obsMinX = obs.x - radius;
@@ -943,31 +1012,58 @@ export function GameCanvas({
       const obsMaxY = obs.y + obs.height + radius;
 
       if (nextX >= obsMinX && xBoundaryCheck(nextX, obs) && nextY >= obsMinY && yBoundaryCheck(nextY, obs)) {
-        // Colliding with this obstacle! Let's check if we can break it.
+        // Colliding with this obstacle!
+        const obsKey = `${obs.x},${obs.y}`;
         const name = obs.name || "";
-        
-        let canBreak = false;
-        if (characterClass === CharacterClass.MARCUS) {
-          // Marcus can break absolutely anything when ramming or burst sprinting!
-          canBreak = true;
-        } else if (characterClass === CharacterClass.RUNNER) {
-          // Runner can break desks, files, and debris (light/medium obstacles) when burst active
-          const isHeavyObstacle = name.includes("Conference Table") || name.includes("Washing Sinks") || name.includes("Toilet Partition");
-          if (!isHeavyObstacle) {
-            canBreak = true;
+
+        // Dynamically initialize HP based on weight/size of obstacle if not present
+        if (obstacleHpRef.current[obsKey] === undefined) {
+          let initialHp = 10; // Light obstacles (Desk unit, minor debris, benches)
+          if (
+            name.includes("Conference Table") ||
+            name.includes("Washing Sinks") ||
+            name.includes("Toilet Partition") ||
+            name.includes("Barricade") ||
+            name.includes("Blockade")
+          ) {
+            initialHp = 30; // Heavy obstacles
+          } else if (
+            name.includes("Teacher Table") ||
+            name.includes("Storage Box") ||
+            name.includes("Cabinet") ||
+            name.includes("Locker") ||
+            name.includes("Sofa") ||
+            name.includes("Couch") ||
+            name.includes("Vending")
+          ) {
+            initialHp = 20; // Medium obstacles
           }
-        } else if (characterClass === CharacterClass.FAIBE) {
-          // Faibe can break desks and debris when burst active
-          const isHeavyObstacle = name.includes("Conference Table") || name.includes("Washing Sinks") || name.includes("Toilet Partition");
-          if (!isHeavyObstacle) {
-            canBreak = true;
-          }
+          obstacleHpRef.current[obsKey] = initialHp;
         }
 
-        if (canBreak) {
+        // Apply physical chipping/smasher damage
+        obstacleHpRef.current[obsKey] -= damageDealt;
+
+        // Spawn occasional dust/wood splinter chips on impact before breaking
+        if (Math.random() < 0.2) {
+          const obsCenterX = obs.x + obs.width / 2;
+          const obsCenterZ = obs.y + obs.height / 2;
+          spawnThreeParticle(
+            obsCenterX + (Math.random() - 0.5) * obs.width,
+            Math.random() * 8 + 1,
+            obsCenterZ + (Math.random() - 0.5) * obs.height,
+            (Math.random() - 0.5) * 15,
+            Math.random() * 10 + 5,
+            (Math.random() - 0.5) * 15,
+            "spark",
+            0xd97706
+          );
+        }
+
+        if (obstacleHpRef.current[obsKey] <= 0) {
+          // Obstacle is broken!
           brokenAny = true;
           
-          // Spawn satisfying break explosion particles in 3D scene!
           const obsCenterX = obs.x + obs.width / 2;
           const obsCenterZ = obs.y + obs.height / 2;
           
@@ -1023,7 +1119,7 @@ export function GameCanvas({
             }
           }
 
-          // Also trigger a loud physical break/crash sound effect tone using the synthesizers!
+          // Trigger a physical crash sound effect
           if (!muted) {
             try {
               const c = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -1041,7 +1137,7 @@ export function GameCanvas({
             } catch (e) {}
           }
 
-          // Brief screenshake or soundwave ripple effect
+          // Brief screen shake / soundwave ripple effect
           soundWavesRef.current.push({
             x: obsCenterX,
             y: obsCenterZ,
@@ -1050,8 +1146,18 @@ export function GameCanvas({
             timeLeft: 0.3,
           });
 
-          // Do NOT add this obstacle to remaining list (it is broken!)
-          continue;
+          // Marcus ram charge impact triggers a larger shockwave pushback
+          if (p.isRamming && characterClass === CharacterClass.MARCUS) {
+            soundWavesRef.current.push({
+              x: obsCenterX,
+              y: obsCenterZ,
+              radius: 12,
+              maxRadius: 180,
+              timeLeft: 0.5,
+            });
+          }
+
+          continue; // exclude this block (it is destroyed!)
         }
       }
 
@@ -1089,6 +1195,9 @@ export function GameCanvas({
   const updatePhysics = (dt: number) => {
     const p = playerRef.current;
     if (p.hp <= 0) return; // Player dead
+
+    const campaign = getOrGenerateCampaign();
+    const floorMap = campaign.floors[currentFloor];
 
     // --- A. DECREMENT ABILITY TIMERS ---
     if (p.abilityActiveTime > 0) {
@@ -1588,13 +1697,14 @@ export function GameCanvas({
               let tx = 0;
               let ty = 0;
               if (t.isHallwaySpecial) {
-                // Pick a coordinate inside the Corridor Hallway
-                // Hallway limits: minX: 380, maxX: 510, minY: 40, maxY: 895
-                tx = 380 + 15 + Math.random() * (510 - 380 - 30);
-                ty = 40 + 20 + Math.random() * (895 - 40 - 40);
+                // Pick a coordinate inside any of the procedural Corridor Hallways
+                const hallways = dynamicRooms.filter(r => r.id.startsWith("H_W"));
+                const hRoom = hallways[Math.floor(Math.random() * hallways.length)] || dynamicRooms[0];
+                tx = hRoom.minX + 15 + Math.random() * (hRoom.maxX - hRoom.minX - 30);
+                ty = hRoom.minY + 20 + Math.random() * (hRoom.maxY - hRoom.minY - 40);
               } else {
-                // Pick a coordinate in a random room
-                const room = ROOMS[Math.floor(Math.random() * ROOMS.length)];
+                // Pick a coordinate in a random procedural room on the floor
+                const room = dynamicRooms[Math.floor(Math.random() * dynamicRooms.length)];
                 tx = room.minX + 15 + Math.random() * (room.maxX - room.minX - 30);
                 ty = room.minY + 15 + Math.random() * (room.maxY - room.minY - 30);
               }
@@ -1708,14 +1818,18 @@ export function GameCanvas({
 
     // --- H. STAIR TRANSITION TRIGGER (WITH COOLDOWN SANITY) ---
     if (staircaseCooldownRef.current <= 0) {
-      // Staircase B (descent hatch): escape point bounds X: 540-710, Y: 600-695
-      if (p.x >= 540 && p.x <= 710 && p.y >= 600 && p.y <= 695) {
+      // Staircase B (escape descent hatch): check proximity to exit (exitX, exitY)
+      const distToExit = Math.sqrt((p.x - floorMap.exitX) ** 2 + (p.y - floorMap.exitY) ** 2);
+      if (distToExit < 40) {
         onFloorComplete();
       }
 
-      // Staircase A (ascent hatch): return to upper floor, bounds X: 540-710, Y: 40-130 (for Floors 1 to 4)
-      if (currentFloor < 5 && p.x >= 540 && p.x <= 710 && p.y >= 40 && p.y <= 130) {
-        onFloorAscend();
+      // Staircase A (return to upper floor): check proximity to spawn (spawnX, spawnY)
+      if (currentFloor < 5) {
+        const distToSpawn = Math.sqrt((p.x - floorMap.spawnX) ** 2 + (p.y - floorMap.spawnY) ** 2);
+        if (distToSpawn < 40) {
+          onFloorAscend();
+        }
       }
     }
 
@@ -2202,17 +2316,17 @@ export function GameCanvas({
     dirLight.position.set(450, 500, 500);
     scene.add(dirLight);
 
-    const floorGeo = new THREE.PlaneGeometry(900, 1000);
+    const floorGeo = new THREE.PlaneGeometry(4500, 1000);
     const cache = imagesCachedRef.current;
     if (cache && cache.map) {
       const texCanvas = document.createElement("canvas");
-      texCanvas.width = 1800;
-      texCanvas.height = 2000;
+      texCanvas.width = 4500;
+      texCanvas.height = 1000;
       const tCtx = texCanvas.getContext("2d");
       if (tCtx) {
         tCtx.fillStyle = "#020617";
-        tCtx.fillRect(0, 0, 1800, 2000);
-        tCtx.drawImage(cache.map, 0, 0, 1800, 2000);
+        tCtx.fillRect(0, 0, 4500, 1000);
+        tCtx.drawImage(cache.map, 0, 0, 4500, 1000);
       }
       const floorTex = new THREE.CanvasTexture(texCanvas);
       const floorMat = new THREE.MeshStandardMaterial({
@@ -2221,8 +2335,9 @@ export function GameCanvas({
         metalness: 0.45,
       });
       const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+      floorMesh.name = "floorMesh"; // Give it a name so we can retrieve and update its texture when changing floors!
       floorMesh.rotation.x = -Math.PI / 2;
-      floorMesh.position.set(450, 0, 500);
+      floorMesh.position.set(2250, 0, 500);
       scene.add(floorMesh);
     }
 
@@ -2297,6 +2412,8 @@ export function GameCanvas({
       const dx = x2 - x1;
       const dy = y2 - y1;
       const length = Math.sqrt(dx * dx + dy * dy);
+      if (length < 2) return; // skip tiny wall slivers
+
       const angle = Math.atan2(dy, dx);
 
       const wallGeo = new THREE.BoxGeometry(length, wallHeight, wallThickness);
@@ -2317,83 +2434,91 @@ export function GameCanvas({
       wallMesh.add(trimMesh);
     };
 
-    // 1. Map outer perimeter borders
-    addWallSegment(40, 40, 40, 895);   // Left outer wall
-    addWallSegment(720, 40, 720, 895); // Right outer wall
-    addWallSegment(40, 40, 720, 40);   // Top outer wall
-    addWallSegment(40, 895, 720, 895); // Bottom outer wall
+    // Get the current dynamic layout rooms and doorways from campaign
+    const campaign = getOrGenerateCampaign();
+    const floorMap = campaign.floors[currentFloor];
+    const rooms = floorMap.rooms;
+    const doorways = floorMap.doorways;
 
-    // 2. Classrooms vertical divider walls at x = 360 (skipping doors)
-    addWallSegment(360, 40, 360, 135);
-    addWallSegment(360, 175, 360, 310);
-    addWallSegment(360, 350, 360, 485);
-    addWallSegment(360, 525, 360, 660);
-    addWallSegment(360, 700, 360, 835);
-    addWallSegment(360, 875, 360, 895);
+    // Helper to check if a doorway lies on a wall segment
+    // and split the segment by subtracting the doorway.
+    const splitAndAddWall = (x1: number, y1: number, x2: number, y2: number) => {
+      let segments = [{ x1, y1, x2, y2 }];
 
-    // 3. Right Offices vertical divider walls at x = 530 (skipping doors)
-    addWallSegment(530, 40, 530, 95);
-    addWallSegment(530, 135, 530, 235);
-    addWallSegment(530, 275, 530, 335);
-    addWallSegment(530, 375, 530, 605);
-    addWallSegment(530, 645, 530, 825);
-    addWallSegment(530, 865, 530, 895);
+      doorways.forEach((door) => {
+        const nextSegs: typeof segments = [];
+        segments.forEach((seg) => {
+          // Check if this is a horizontal wall (y coordinate is constant)
+          const isHoriz = Math.abs(seg.y1 - seg.y2) < 0.1;
 
-    // 4. Classroom horizontal division walls at y = 205, 380, 555, 730
-    // C1 to C2 (Floor 1 has door at x: [100-140])
-    if (currentFloor === 1) {
-      addWallSegment(40, 205, 100, 205);
-      addWallSegment(140, 205, 360, 205);
-    } else {
-      addWallSegment(40, 205, 360, 205);
-    }
+          if (isHoriz) {
+            // Horizontal wall lies at y = seg.y1
+            // Check if the doorway intersects this horizontal wall
+            const doorIntersectsY = seg.y1 >= door.minY - 2 && seg.y1 <= door.maxY + 2;
+            if (doorIntersectsY) {
+              const minSegX = Math.min(seg.x1, seg.x2);
+              const maxSegX = Math.max(seg.x1, seg.x2);
+              const minDoorX = door.minX;
+              const maxDoorX = door.maxX;
 
-    // C2 to C3 (Floor 1 has door at x: [220-260])
-    if (currentFloor === 1) {
-      addWallSegment(40, 380, 220, 380);
-      addWallSegment(260, 380, 360, 380);
-    } else {
-      addWallSegment(40, 380, 360, 380);
-    }
+              // Check if the door's horizontal range overlaps the segment's horizontal range
+              if (maxDoorX > minSegX && minDoorX < maxSegX) {
+                // Split!
+                if (minDoorX > minSegX) {
+                  nextSegs.push({ x1: seg.x1, y1: seg.y1, x2: minDoorX, y2: seg.y1 });
+                }
+                if (maxDoorX < maxSegX) {
+                  nextSegs.push({ x1: maxDoorX, y1: seg.y1, x2: seg.x2, y2: seg.y1 });
+                }
+                return; // skip pushing original segment
+              }
+            }
+          } else {
+            // Vertical wall lies at x = seg.x1
+            // Check if the doorway intersects this vertical wall
+            const doorIntersectsX = seg.x1 >= door.minX - 2 && seg.x1 <= door.maxX + 2;
+            if (doorIntersectsX) {
+              const minSegY = Math.min(seg.y1, seg.y2);
+              const maxSegY = Math.max(seg.y1, seg.y2);
+              const minDoorY = door.minY;
+              const maxDoorY = door.maxY;
 
-    // C3 to C4 (Floor 1 has door at x: [100-140])
-    if (currentFloor === 1) {
-      addWallSegment(40, 555, 100, 555);
-      addWallSegment(140, 555, 360, 555);
-    } else {
-      addWallSegment(40, 555, 360, 555);
-    }
+              // Check if the door's vertical range overlaps the segment's vertical range
+              if (maxDoorY > minSegY && minDoorY < maxSegY) {
+                // Split!
+                if (minDoorY > minSegY) {
+                  nextSegs.push({ x1: seg.x1, y1: seg.y1, x2: seg.x1, y2: minDoorY });
+                }
+                if (maxDoorY < maxSegY) {
+                  nextSegs.push({ x1: seg.x1, y1: maxDoorY, x2: seg.x1, y2: seg.y2 });
+                }
+                return; // skip pushing original segment
+              }
+            }
+          }
+          nextSegs.push(seg);
+        });
+        segments = nextSegs;
+      });
 
-    // C4 to C5 (Floor 1 has door at x: [220-260])
-    if (currentFloor === 1) {
-      addWallSegment(40, 730, 220, 730);
-      addWallSegment(260, 730, 360, 730);
-    } else {
-      addWallSegment(40, 730, 360, 730);
-    }
+      // Add all remaining segments as physical wall boxes
+      segments.forEach((seg) => {
+        addWallSegment(seg.x1, seg.y1, seg.x2, seg.y2);
+      });
+    };
 
-    // 5. Right Offices horizontal division walls
-    // StairA to Office1 at y = 160
-    addWallSegment(530, 160, 720, 160);
-
-    // Office1 to Office2 at y = 300 (Floor 1 has door at x: [600-640])
-    if (currentFloor === 1) {
-      addWallSegment(530, 300, 600, 300);
-      addWallSegment(640, 300, 720, 300);
-    } else {
-      addWallSegment(530, 300, 720, 300);
-    }
-
-    // Office2 to StairB at y = 580 (Floor 1 has door at x: [600-640])
-    if (currentFloor === 1) {
-      addWallSegment(530, 580, 600, 580);
-      addWallSegment(640, 580, 720, 580);
-    } else {
-      addWallSegment(530, 580, 720, 580);
-    }
-
-    // StairB to Toilets at y = 710
-    addWallSegment(530, 710, 720, 710);
+    // To prevent duplicate overlapping walls between adjacent rooms,
+    // we can draw all 4 walls for every room, but split them with doorways!
+    rooms.forEach((r) => {
+      // Top wall
+      splitAndAddWall(r.minX, r.minY, r.maxX, r.minY);
+      // Bottom wall
+      splitAndAddWall(r.minX, r.maxY, r.maxX, r.maxY);
+      // Left wall
+      splitAndAddWall(r.minX, r.minY, r.minX, r.maxY);
+      // Right wall
+      splitAndAddWall(r.maxX, r.minY, r.maxX, r.maxY);
+    });
   };
 
   const addCeilingLights3D = () => {
@@ -2409,35 +2534,36 @@ export function GameCanvas({
     });
     toRemove.forEach((obj) => scene.remove(obj));
 
-    // Positions for soft ceiling lights that generate specular reflections on the waxed tile floors
-    const lightPositions = [
-      // Corridor Hallway
-      { x: 445, z: 150, color: 0xbae6fd, intensity: 3.5 },
-      { x: 445, z: 500, color: 0xbae6fd, intensity: 3.5 },
-      { x: 445, z: 850, color: 0xbae6fd, intensity: 3.5 },
-      // Offices and toilets
-      { x: 625, z: 235, color: 0xfef08a, intensity: 4.2 }, // warm office lighting
-      { x: 625, z: 440, color: 0xfef08a, intensity: 4.2 },
-      { x: 625, z: 810, color: 0xe0f2fe, intensity: 4.2 },
-      // Classrooms (centered lights)
-      { x: 200, z: 120, color: 0x93c5fd, intensity: 3.2 },
-      { x: 200, z: 295, color: 0x93c5fd, intensity: 3.2 },
-      { x: 200, z: 470, color: 0x93c5fd, intensity: 3.2 },
-      { x: 200, z: 645, color: 0x93c5fd, intensity: 3.2 },
-      { x: 200, z: 820, color: 0x93c5fd, intensity: 3.2 },
-    ];
+    const campaign = getOrGenerateCampaign();
+    const floorMap = campaign.floors[currentFloor];
+    const rooms = floorMap.rooms;
 
-    lightPositions.forEach((pos, idx) => {
-      const pLight = new THREE.PointLight(pos.color, pos.intensity, 220, 1.2);
-      pLight.position.set(pos.x, 36, pos.z); 
+    rooms.forEach((room, idx) => {
+      const cx = (room.minX + room.maxX) / 2;
+      const cz = (room.minY + room.maxY) / 2;
+
+      // Classrooms get cool fluorescent cyan/blue lighting, offices/corridors get warmer tones!
+      let color = 0x93c5fd; // Blue/cyan
+      let intensity = 3.2;
+
+      if (room.id.startsWith("H_W")) {
+        color = 0xbae6fd; // corridor cool light
+        intensity = 3.5;
+      } else if (room.id.startsWith("Stair") || room.id.startsWith("Passage")) {
+        color = 0xfef08a; // warm stair safety light
+        intensity = 4.2;
+      }
+
+      const pLight = new THREE.PointLight(color, intensity, 220, 1.2);
+      pLight.position.set(cx, 36, cz); 
       pLight.name = `ceilingLight_${idx}`;
       scene.add(pLight);
 
       // Visual physical light bulb on ceiling
       const bulbGeo = new THREE.CylinderGeometry(2.5, 2.5, 0.6, 8);
-      const bulbMat = new THREE.MeshBasicMaterial({ color: pos.color });
+      const bulbMat = new THREE.MeshBasicMaterial({ color: color });
       const bulb = new THREE.Mesh(bulbGeo, bulbMat);
-      bulb.position.set(pos.x, 37.8, pos.z);
+      bulb.position.set(cx, 37.8, cz);
       bulb.name = `ceilingLightBulb_${idx}`;
       scene.add(bulb);
     });
@@ -3668,7 +3794,7 @@ export function GameCanvas({
     ctx.drawImage(playerImg, -19, -19, 38, 38);
     ctx.restore();
 
-    // Draw dynamic dark area vignette flashlight/lantern spotlight center focus overlay (covers 900x1000)
+    // Draw dynamic dark area vignette flashlight/lantern spotlight center focus overlay (covers 4500x1000)
     const vignetteGrad = ctx.createRadialGradient(p.x, p.y, 45, p.x, p.y, 230);
     vignetteGrad.addColorStop(0, "rgba(2, 6, 23, 0.0)");      // full light center focus core
     vignetteGrad.addColorStop(0.35, "rgba(2, 6, 23, 0.35)");  // soft focal fade-off begins
@@ -3676,7 +3802,7 @@ export function GameCanvas({
     vignetteGrad.addColorStop(1, "rgba(2, 6, 23, 1.0)");      // pure vignette pitch blackness on edges
     
     ctx.fillStyle = vignetteGrad;
-    ctx.fillRect(0, 0, 900, 1000);
+    ctx.fillRect(0, 0, 4500, 1000);
 
     // Restore opacity alpha and zoom matrices
     ctx.globalAlpha = 1.0;
@@ -3731,10 +3857,10 @@ export function GameCanvas({
         <div id="game-canvas-wrapper" className="my-2 max-w-full overflow-hidden flex items-center justify-center bg-slate-950 rounded-xl relative shadow-inner">
           <canvas
             ref={canvasRef}
-            width={900}
+            width={4500}
             height={1000}
             id="game-board-canvas"
-            className={`${is3DMode ? "hidden" : "block"} max-w-full max-h-[80vh] aspect-[9/10] object-contain cursor-crosshair relative bg-slate-950`}
+            className={`${is3DMode ? "hidden" : "block"} w-full max-h-[80vh] aspect-[9/2] object-contain cursor-crosshair relative bg-slate-950`}
           />
           <canvas
             ref={canvas3DRef}
