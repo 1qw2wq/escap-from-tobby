@@ -434,6 +434,8 @@ export function GameCanvas({
     setTimeout(() => {
       if (threeSceneRef.current) {
         rebuildObstacles3D();
+        buildRealWalls3D();
+        addCeilingLights3D();
         if (playerMeshRef.current && threeSceneRef.current) {
           threeSceneRef.current.remove(playerMeshRef.current);
           const playerGroup = createPlayer3DMesh();
@@ -572,10 +574,26 @@ export function GameCanvas({
 
     const getCanvasCoords = (clientX: number, clientY: number) => {
       const rect = canvas.getBoundingClientRect();
-      // Translate HTML display coordinates directly into our 900x1000 resolution
-      const x = ((clientX - rect.left) / rect.width) * 900;
-      const y = ((clientY - rect.top) / rect.height) * 1000;
-      return { x, y };
+      if (is3DMode && threeCameraRef.current) {
+        // Normalized device coordinates
+        const mouseX = ((clientX - rect.left) / rect.width) * 2 - 1;
+        const mouseY = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+        // Use Raycaster to project mouse coordinates on the ground plane (y = 0)
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), threeCameraRef.current);
+
+        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const targetPoint = new THREE.Vector3();
+        raycaster.ray.intersectPlane(plane, targetPoint);
+
+        return { x: targetPoint.x, y: targetPoint.z };
+      } else {
+        // Translate HTML display coordinates directly into our 900x1000 resolution
+        const x = ((clientX - rect.left) / rect.width) * 900;
+        const y = ((clientY - rect.top) / rect.height) * 1000;
+        return { x, y };
+      }
     };
 
     const handleMouseDown = (e: MouseEvent) => {
@@ -1072,19 +1090,50 @@ export function GameCanvas({
       // Perform slide collision checking against walls and static obstacles
       const nextX = p.x + moveX;
       const nextY = p.y + moveY;
-      const radius = 14; // Player body physical collision bounding circle (refined)
+      const radius = 11.5; // Highly responsive player collision radius to prevent dead-zones
 
-      if (isLocationWalkable(nextX, nextY, radius)) {
+      let canMove = isLocationWalkable(nextX, nextY, radius);
+      if (canMove) {
         p.x = nextX;
         p.y = nextY;
       } else {
-        // Attempt slide on horizontal axis alone
-        if (isLocationWalkable(nextX, p.y, radius)) {
+        // Smooth slide check
+        const canMoveX = isLocationWalkable(nextX, p.y, radius);
+        const canMoveY = isLocationWalkable(p.x, nextY, radius);
+
+        if (canMoveX && !canMoveY) {
           p.x = nextX;
-        }
-        // Attempt slide on vertical axis alone
-        else if (isLocationWalkable(p.x, nextY, radius)) {
+        } else if (canMoveY && !canMoveX) {
           p.y = nextY;
+        } else if (canMoveX && canMoveY) {
+          // If both axes are open individually, choose the one matching the major direction of movement
+          if (Math.abs(moveX) >= Math.abs(moveY)) {
+            p.x = nextX;
+          } else {
+            p.y = nextY;
+          }
+        } else {
+          // Dynamic Corner Nudge: slide seamlessly around table edges & doorframes
+          const nudgeAmt = 5;
+          if (Math.abs(moveX) > Math.abs(moveY)) {
+            // Moving mostly horizontally: nudge vertically to find gap
+            if (isLocationWalkable(nextX, p.y - nudgeAmt, radius)) {
+              p.x = nextX;
+              p.y -= nudgeAmt * 0.4;
+            } else if (isLocationWalkable(nextX, p.y + nudgeAmt, radius)) {
+              p.x = nextX;
+              p.y += nudgeAmt * 0.4;
+            }
+          } else {
+            // Moving mostly vertically: nudge horizontally to find gap
+            if (isLocationWalkable(p.x - nudgeAmt, nextY, radius)) {
+              p.x -= nudgeAmt * 0.4;
+              p.y = nextY;
+            } else if (isLocationWalkable(p.x + nudgeAmt, nextY, radius)) {
+              p.x += nudgeAmt * 0.4;
+              p.y = nextY;
+            }
+          }
         }
       }
     }
@@ -1699,8 +1748,8 @@ export function GameCanvas({
       const floorTex = new THREE.CanvasTexture(texCanvas);
       const floorMat = new THREE.MeshStandardMaterial({
         map: floorTex,
-        roughness: 0.35,
-        metalness: 0.35,
+        roughness: 0.16, // Glossy polished floor reflecting ambient light
+        metalness: 0.45,
       });
       const floorMesh = new THREE.Mesh(floorGeo, floorMat);
       floorMesh.rotation.x = -Math.PI / 2;
@@ -1747,6 +1796,184 @@ export function GameCanvas({
     flashlight.target = lightTarget;
   };
 
+  const buildRealWalls3D = () => {
+    const scene = threeSceneRef.current;
+    if (!scene) return;
+
+    // Create or clear walls group
+    let wallsGroup = scene.getObjectByName("wallsGroup") as THREE.Group | null;
+    if (wallsGroup) {
+      scene.remove(wallsGroup);
+    }
+    wallsGroup = new THREE.Group();
+    wallsGroup.name = "wallsGroup";
+    scene.add(wallsGroup);
+
+    const wallHeight = 42; 
+    const wallThickness = 12;
+
+    // Premium high-gloss reflective slate wall material
+    const wallMaterial = new THREE.MeshStandardMaterial({
+      color: 0x0c1322,  // Rich deep slate navy
+      roughness: 0.08,  // Highly reflective glossy finish
+      metalness: 0.85,  // Metallic reflection accents
+    });
+
+    // Bright cyan fluorescent neon strip trim running along the top of walls
+    const trimMaterial = new THREE.MeshBasicMaterial({
+      color: 0x0ea5e9, // Electric cyan glowing trim
+    });
+
+    const addWallSegment = (x1: number, y1: number, x2: number, y2: number) => {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx);
+
+      const wallGeo = new THREE.BoxGeometry(length, wallHeight, wallThickness);
+      const wallMesh = new THREE.Mesh(wallGeo, wallMaterial);
+      
+      const midX = x1 + dx / 2;
+      const midY = y1 + dy / 2;
+      wallMesh.position.set(midX, wallHeight / 2, midY);
+      wallMesh.rotation.y = -angle;
+      wallMesh.castShadow = true;
+      wallMesh.receiveShadow = true;
+      wallsGroup!.add(wallMesh);
+
+      // Neon glowing horizontal visual trim line
+      const trimGeo = new THREE.BoxGeometry(length, 1.8, wallThickness + 0.6);
+      const trimMesh = new THREE.Mesh(trimGeo, trimMaterial);
+      trimMesh.position.set(0, wallHeight / 2 + 0.9, 0);
+      wallMesh.add(trimMesh);
+    };
+
+    // 1. Map outer perimeter borders
+    addWallSegment(40, 40, 40, 895);   // Left outer wall
+    addWallSegment(720, 40, 720, 895); // Right outer wall
+    addWallSegment(40, 40, 720, 40);   // Top outer wall
+    addWallSegment(40, 895, 720, 895); // Bottom outer wall
+
+    // 2. Classrooms vertical divider walls at x = 360 (skipping doors)
+    addWallSegment(360, 40, 360, 135);
+    addWallSegment(360, 175, 360, 310);
+    addWallSegment(360, 350, 360, 485);
+    addWallSegment(360, 525, 360, 660);
+    addWallSegment(360, 700, 360, 835);
+    addWallSegment(360, 875, 360, 895);
+
+    // 3. Right Offices vertical divider walls at x = 530 (skipping doors)
+    addWallSegment(530, 40, 530, 95);
+    addWallSegment(530, 135, 530, 235);
+    addWallSegment(530, 275, 530, 335);
+    addWallSegment(530, 375, 530, 605);
+    addWallSegment(530, 645, 530, 825);
+    addWallSegment(530, 865, 530, 895);
+
+    // 4. Classroom horizontal division walls at y = 205, 380, 555, 730
+    // C1 to C2 (Floor 1 has door at x: [100-140])
+    if (currentFloor === 1) {
+      addWallSegment(40, 205, 100, 205);
+      addWallSegment(140, 205, 360, 205);
+    } else {
+      addWallSegment(40, 205, 360, 205);
+    }
+
+    // C2 to C3 (Floor 1 has door at x: [220-260])
+    if (currentFloor === 1) {
+      addWallSegment(40, 380, 220, 380);
+      addWallSegment(260, 380, 360, 380);
+    } else {
+      addWallSegment(40, 380, 360, 380);
+    }
+
+    // C3 to C4 (Floor 1 has door at x: [100-140])
+    if (currentFloor === 1) {
+      addWallSegment(40, 555, 100, 555);
+      addWallSegment(140, 555, 360, 555);
+    } else {
+      addWallSegment(40, 555, 360, 555);
+    }
+
+    // C4 to C5 (Floor 1 has door at x: [220-260])
+    if (currentFloor === 1) {
+      addWallSegment(40, 730, 220, 730);
+      addWallSegment(260, 730, 360, 730);
+    } else {
+      addWallSegment(40, 730, 360, 730);
+    }
+
+    // 5. Right Offices horizontal division walls
+    // StairA to Office1 at y = 160
+    addWallSegment(530, 160, 720, 160);
+
+    // Office1 to Office2 at y = 300 (Floor 1 has door at x: [600-640])
+    if (currentFloor === 1) {
+      addWallSegment(530, 300, 600, 300);
+      addWallSegment(640, 300, 720, 300);
+    } else {
+      addWallSegment(530, 300, 720, 300);
+    }
+
+    // Office2 to StairB at y = 580 (Floor 1 has door at x: [600-640])
+    if (currentFloor === 1) {
+      addWallSegment(530, 580, 600, 580);
+      addWallSegment(640, 580, 720, 580);
+    } else {
+      addWallSegment(530, 580, 720, 580);
+    }
+
+    // StairB to Toilets at y = 710
+    addWallSegment(530, 710, 720, 710);
+  };
+
+  const addCeilingLights3D = () => {
+    const scene = threeSceneRef.current;
+    if (!scene) return;
+
+    // Clear existing ceiling lights
+    const toRemove: THREE.Object3D[] = [];
+    scene.traverse((child) => {
+      if (child.name && (child.name.startsWith("ceilingLight") || child.name.startsWith("ceilingLightBulb"))) {
+        toRemove.push(child);
+      }
+    });
+    toRemove.forEach((obj) => scene.remove(obj));
+
+    // Positions for soft ceiling lights that generate specular reflections on the waxed tile floors
+    const lightPositions = [
+      // Corridor Hallway
+      { x: 445, z: 150, color: 0xbae6fd, intensity: 3.5 },
+      { x: 445, z: 500, color: 0xbae6fd, intensity: 3.5 },
+      { x: 445, z: 850, color: 0xbae6fd, intensity: 3.5 },
+      // Offices and toilets
+      { x: 625, z: 235, color: 0xfef08a, intensity: 4.2 }, // warm office lighting
+      { x: 625, z: 440, color: 0xfef08a, intensity: 4.2 },
+      { x: 625, z: 810, color: 0xe0f2fe, intensity: 4.2 },
+      // Classrooms (centered lights)
+      { x: 200, z: 120, color: 0x93c5fd, intensity: 3.2 },
+      { x: 200, z: 295, color: 0x93c5fd, intensity: 3.2 },
+      { x: 200, z: 470, color: 0x93c5fd, intensity: 3.2 },
+      { x: 200, z: 645, color: 0x93c5fd, intensity: 3.2 },
+      { x: 200, z: 820, color: 0x93c5fd, intensity: 3.2 },
+    ];
+
+    lightPositions.forEach((pos, idx) => {
+      const pLight = new THREE.PointLight(pos.color, pos.intensity, 220, 1.2);
+      pLight.position.set(pos.x, 36, pos.z); 
+      pLight.name = `ceilingLight_${idx}`;
+      scene.add(pLight);
+
+      // Visual physical light bulb on ceiling
+      const bulbGeo = new THREE.CylinderGeometry(2.5, 2.5, 0.6, 8);
+      const bulbMat = new THREE.MeshBasicMaterial({ color: pos.color });
+      const bulb = new THREE.Mesh(bulbGeo, bulbMat);
+      bulb.position.set(pos.x, 37.8, pos.z);
+      bulb.name = `ceilingLightBulb_${idx}`;
+      scene.add(bulb);
+    });
+  };
+
   const checkAndInitThree = () => {
     const canvas = canvas3DRef.current;
     if (!canvas) return;
@@ -1758,6 +1985,8 @@ export function GameCanvas({
     try {
       initThree();
       rebuildObstacles3D();
+      buildRealWalls3D();
+      addCeilingLights3D();
     } catch (e) {
       console.error("Three.js initialization failed:", e);
     }
@@ -1846,14 +2075,22 @@ export function GameCanvas({
 
       const camera = threeCameraRef.current;
       if (camera) {
-        const targetCamX = p.x;
-        const targetCamZ = p.y + 195; 
-        const targetCamY = 320; 
+        // Dynamic look-ahead offset based on player facing angle (p.angle) to lead the view beautifully
+        const lookAheadDist = 65;
+        const lookX = Math.cos(p.angle) * lookAheadDist;
+        const lookY = Math.sin(p.angle) * lookAheadDist;
 
-        camera.position.x += (targetCamX - camera.position.x) * 0.12;
-        camera.position.z += (targetCamZ - camera.position.z) * 0.12;
-        camera.position.y += (targetCamY - camera.position.y) * 0.12;
-        camera.lookAt(p.x, 0, p.y);
+        // Soft, responsive cinematic following positions
+        const targetCamX = p.x + lookX * 0.7;
+        const targetCamZ = p.y + 160 + lookY * 0.7; // Closer, more dramatic angle
+        const targetCamY = 275; // Lower height to increase perspective and depth of glossy walls and reflections
+
+        camera.position.x += (targetCamX - camera.position.x) * 0.075; // Smooth camera damping
+        camera.position.z += (targetCamZ - camera.position.z) * 0.075;
+        camera.position.y += (targetCamY - camera.position.y) * 0.075;
+
+        // Focus camera on the player, slightly leading ahead in their facing direction
+        camera.lookAt(p.x + lookX * 0.4, 6, p.y + lookY * 0.4);
       }
 
       const flashlight = playerLightRef.current;
