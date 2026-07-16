@@ -992,6 +992,7 @@ export function GameCanvas({
     // --- BURST MODE CALCULATION ---
     const isShiftHeld = !!keys["shift"];
     const playerIsMoving = dx !== 0 || dy !== 0;
+    p.isMoving = playerIsMoving;
 
     if (isShiftHeld && playerIsMoving && (p.burstEnergy ?? 100) > 0) {
       p.isBurstActive = true;
@@ -1194,6 +1195,8 @@ export function GameCanvas({
 
       // Fast creep wiggling timer
       t.wiggleOffset += dt * 10;
+      t.isMoving = false;
+      t.isChasing = false;
 
       if (isFloorPacified) {
         t.stareTimer = 0;
@@ -1234,6 +1237,7 @@ export function GameCanvas({
           if (isLocationWalkable(t.x + stepX, t.y + stepY, 10)) {
             t.x += stepX;
             t.y += stepY;
+            t.isMoving = true;
           }
         }
         return; // Skips chasing player
@@ -1260,6 +1264,8 @@ export function GameCanvas({
         const chaseSpeed = 42; 
         t.x += Math.cos(t.angle) * chaseSpeed * dt;
         t.y += Math.sin(t.angle) * chaseSpeed * dt;
+        t.isMoving = true;
+        t.isChasing = true;
 
         // Melee hit
         if (dist <= 20) {
@@ -1386,6 +1392,7 @@ export function GameCanvas({
             if (isLocationWalkable(t.x + stepX, t.y + stepY, 10)) {
               t.x += stepX;
               t.y += stepY;
+              t.isMoving = true;
             } else {
               // If they hit a collision block, clear the target to force choosing a new one
               t.patrolTargetX = 0;
@@ -1561,18 +1568,27 @@ export function GameCanvas({
 
     let torsoColor = 0x3b82f6; // Blue for student runner
     let headColor = 0xfcd8c4;
+    let pantsColor = 0x1e293b;
+    let shoeColor = 0x0f172a;
+    let hairColor = 0x06b6d4; // Cyan hair for runner
     let isHeavy = false;
     let isMagical = false;
 
     if (characterClass === CharacterClass.MARCUS) {
       torsoColor = 0x15803d; // Green vest
+      hairColor = 0x374151; // Grey-black hair
+      pantsColor = 0x334155;
+      shoeColor = 0x1e293b;
       isHeavy = true;
     } else if (characterClass === CharacterClass.FAIBE) {
       torsoColor = 0xbe123c; // Crimson blouse
+      hairColor = 0xeab308; // Golden locks
+      pantsColor = 0x475569;
+      shoeColor = 0x3f3f46;
       isMagical = true;
     }
 
-    // Glowing propulsion ring under player hover boots
+    // --- Propulsion Ring ---
     const ringGeo = new THREE.RingGeometry(11, 13, 16);
     const ringMat = new THREE.MeshBasicMaterial({
       color: torsoColor,
@@ -1585,53 +1601,163 @@ export function GameCanvas({
     ringMesh.position.y = 1;
     group.add(ringMesh);
 
-    // Torso capsule shape
+    // --- Hips ---
+    const hipsGeo = new THREE.BoxGeometry(11, 4, 7);
+    const hipsMat = new THREE.MeshStandardMaterial({ color: pantsColor, roughness: 0.7 });
+    const hipsMesh = new THREE.Mesh(hipsGeo, hipsMat);
+    hipsMesh.position.y = 10;
+    group.add(hipsMesh);
+
+    // --- Torso ---
+    const torsoHeight = isHeavy ? 13 : 11;
     const torsoGeo = isHeavy 
-      ? new THREE.BoxGeometry(22, 28, 16) 
-      : new THREE.CylinderGeometry(8, 11, 24, 16);
+      ? new THREE.BoxGeometry(15, torsoHeight, 10) 
+      : new THREE.CylinderGeometry(5.5, 6.5, torsoHeight, 12);
     const torsoMat = new THREE.MeshStandardMaterial({
       color: torsoColor,
-      roughness: 0.2,
-      metalness: 0.5,
+      roughness: 0.3,
+      metalness: 0.4,
     });
     const torsoMesh = new THREE.Mesh(torsoGeo, torsoMat);
-    torsoMesh.position.y = 15;
+    torsoMesh.position.y = 10 + 2 + torsoHeight / 2; // centered
     group.add(torsoMesh);
 
-    // Head sphere
-    const headGeo = new THREE.SphereGeometry(7.5, 16, 16);
+    // --- Head ---
+    const headGeo = new THREE.SphereGeometry(5.5, 16, 16);
     const headMat = new THREE.MeshStandardMaterial({
       color: headColor,
-      roughness: 0.3,
+      roughness: 0.4,
     });
     const headMesh = new THREE.Mesh(headGeo, headMat);
-    headMesh.position.y = 31;
+    const headY = 10 + 2 + torsoHeight + 5; // e.g., 28.5
+    headMesh.position.y = headY;
     group.add(headMesh);
 
-    // Visor glows with futuristic HUD neon color
-    const eyeGeo = new THREE.BoxGeometry(10, 2.5, 2);
+    // --- Visor / Eyes ---
+    const eyeGeo = new THREE.BoxGeometry(7, 1.8, 1.8);
     const eyeMat = new THREE.MeshBasicMaterial({
       color: isMagical ? 0xd8b4fe : (isHeavy ? 0xa7f3d0 : 0x93c5fd),
     });
     const eyeMesh = new THREE.Mesh(eyeGeo, eyeMat);
-    eyeMesh.position.set(0, 31.5, 6.5);
+    eyeMesh.position.set(0, headY + 0.5, 4.8);
     group.add(eyeMesh);
 
+    // --- Hair ---
+    // spiky stylish low-poly hair using overlapping box/cones
+    const hairGroup = new THREE.Group();
+    hairGroup.position.set(0, headY + 2.5, -1);
+    
+    const hairMainGeo = new THREE.SphereGeometry(5.8, 8, 8, 0, Math.PI * 2, 0, Math.PI / 1.6);
+    const hairMainMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.8 });
+    const hairMain = new THREE.Mesh(hairMainGeo, hairMainMat);
+    hairGroup.add(hairMain);
+
+    // Spikes/bangs
+    const spikeGeo = new THREE.ConeGeometry(1.5, 4, 4);
+    const spikeMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.8 });
+    for (let i = 0; i < 5; i++) {
+      const spike = new THREE.Mesh(spikeGeo, spikeMat);
+      spike.position.set(-3 + i * 1.5, 1, 3);
+      spike.rotation.x = Math.PI / 4;
+      spike.rotation.z = (i - 2) * 0.15;
+      hairGroup.add(spike);
+    }
+    group.add(hairGroup);
+
+    // --- Legs ---
+    // We create pivot groups for legs so they rotate around (0,0,0) local
+    const legLength = 10;
+    const legRadius = isHeavy ? 2.2 : 1.6;
+    const legGeo = new THREE.CylinderGeometry(legRadius, legRadius * 0.8, legLength, 8);
+    const legMat = new THREE.MeshStandardMaterial({ color: pantsColor, roughness: 0.7 });
+
+    const leftLegGroup = new THREE.Group();
+    leftLegGroup.name = "leftLeg";
+    leftLegGroup.position.set(-3.5, 10, 0);
+    const leftLegMesh = new THREE.Mesh(legGeo, legMat);
+    leftLegMesh.position.y = -legLength / 2; // offset so top of cylinder is at pivot origin (0,0,0)
+    leftLegMesh.castShadow = true;
+    leftLegMesh.receiveShadow = true;
+    leftLegGroup.add(leftLegMesh);
+
+    // Shoe
+    const shoeGeo = new THREE.BoxGeometry(2.5, 2, 4.5);
+    const shoeMat = new THREE.MeshStandardMaterial({ color: shoeColor, roughness: 0.8 });
+    const leftShoe = new THREE.Mesh(shoeGeo, shoeMat);
+    leftShoe.position.set(0, -legLength, 1);
+    leftLegGroup.add(leftShoe);
+
+    group.add(leftLegGroup);
+
+    const rightLegGroup = new THREE.Group();
+    rightLegGroup.name = "rightLeg";
+    rightLegGroup.position.set(3.5, 10, 0);
+    const rightLegMesh = new THREE.Mesh(legGeo, legMat);
+    rightLegMesh.position.y = -legLength / 2;
+    rightLegMesh.castShadow = true;
+    rightLegMesh.receiveShadow = true;
+    rightLegGroup.add(rightLegMesh);
+
+    const rightShoe = leftShoe.clone();
+    rightLegGroup.add(rightShoe);
+
+    group.add(rightLegGroup);
+
+    // --- Arms ---
+    const armLength = isHeavy ? 11 : 10;
+    const armRadius = isHeavy ? 2.0 : 1.4;
+    const armGeo = new THREE.CylinderGeometry(armRadius, armRadius * 0.9, armLength, 8);
+    const armMat = new THREE.MeshStandardMaterial({ color: torsoColor, roughness: 0.4 });
+    const handGeo = new THREE.SphereGeometry(1.8, 8, 8);
+    const handMat = new THREE.MeshStandardMaterial({ color: headColor, roughness: 0.5 });
+
+    const shoulderY = 10 + 2 + torsoHeight - 1.5;
+
+    const leftArmGroup = new THREE.Group();
+    leftArmGroup.name = "leftArm";
+    leftArmGroup.position.set(isHeavy ? -9 : -7.5, shoulderY, 0);
+    const leftArmMesh = new THREE.Mesh(armGeo, armMat);
+    leftArmMesh.position.y = -armLength / 2;
+    leftArmMesh.castShadow = true;
+    leftArmMesh.receiveShadow = true;
+    leftArmGroup.add(leftArmMesh);
+
+    const leftHand = new THREE.Mesh(handGeo, handMat);
+    leftHand.position.set(0, -armLength, 0);
+    leftArmGroup.add(leftHand);
+
+    group.add(leftArmGroup);
+
+    const rightArmGroup = new THREE.Group();
+    rightArmGroup.name = "rightArm";
+    rightArmGroup.position.set(isHeavy ? 9 : 7.5, shoulderY, 0);
+    const rightArmMesh = new THREE.Mesh(armGeo, armMat);
+    rightArmMesh.position.y = -armLength / 2;
+    rightArmMesh.castShadow = true;
+    rightArmMesh.receiveShadow = true;
+    rightArmGroup.add(rightArmMesh);
+
+    const rightHand = leftHand.clone();
+    rightArmGroup.add(rightHand);
+
+    group.add(rightArmGroup);
+
+    // --- Class Special Accessories ---
     if (isHeavy) {
-      const padGeo = new THREE.BoxGeometry(7, 7, 12);
+      const padGeo = new THREE.BoxGeometry(6, 4, 8);
       const padMat = new THREE.MeshStandardMaterial({ color: 0x166534, metalness: 0.7 });
       const leftPad = new THREE.Mesh(padGeo, padMat);
-      leftPad.position.set(-14, 25, 0);
+      leftPad.position.set(0, 0.5, 0); // attached to shoulder pivot or torso
+      leftArmGroup.add(leftPad);
+
       const rightPad = leftPad.clone();
-      rightPad.position.x = 14;
-      group.add(leftPad);
-      group.add(rightPad);
+      rightArmGroup.add(rightPad);
     } else if (isMagical) {
-      const haloGeo = new THREE.TorusGeometry(11, 1.2, 8, 24);
+      const haloGeo = new THREE.TorusGeometry(8, 0.9, 8, 24);
       const haloMat = new THREE.MeshBasicMaterial({ color: 0xa855f7, transparent: true, opacity: 0.7 });
       const halo = new THREE.Mesh(haloGeo, haloMat);
       halo.rotation.x = Math.PI / 2;
-      halo.position.y = 31;
+      halo.position.y = headY + 5;
       group.add(halo);
     }
 
@@ -1641,66 +1767,165 @@ export function GameCanvas({
   const createTobby3DMesh = (): THREE.Group => {
     const group = new THREE.Group();
 
-    // Purple cyber-coat body
-    const torsoGeo = new THREE.CylinderGeometry(8, 11, 26, 16);
+    const coatColor = 0x2e1065; // deep purple corporate cyber-coat
+    const skinColor = 0xe5bfa1;
+    const pantsColor = 0x1e1b4b; // dark pants
+    const shoeColor = 0x09090b; // shiny black leather shoes
+    const hairColor = 0x1c1917;
+
+    // --- Hips ---
+    const hipsGeo = new THREE.BoxGeometry(11, 4.5, 7.5);
+    const hipsMat = new THREE.MeshStandardMaterial({ color: pantsColor, roughness: 0.8 });
+    const hipsMesh = new THREE.Mesh(hipsGeo, hipsMat);
+    hipsMesh.position.y = 11;
+    group.add(hipsMesh);
+
+    // --- Torso (Tobby's Tall Cyber-Coat) ---
+    const torsoHeight = 14;
+    const torsoGeo = new THREE.CylinderGeometry(6.5, 8.5, torsoHeight, 16);
     const torsoMat = new THREE.MeshStandardMaterial({
-      color: 0x2e1065, 
-      roughness: 0.1,
-      metalness: 0.8,
+      color: coatColor,
+      roughness: 0.15,
+      metalness: 0.6,
     });
     const torsoMesh = new THREE.Mesh(torsoGeo, torsoMat);
-    torsoMesh.position.y = 16;
+    torsoMesh.position.y = 11 + 2.2 + torsoHeight / 2; // y = 20.2
     group.add(torsoMesh);
 
-    // Tobby's Signature Red Necktie
-    const tieGeo = new THREE.ConeGeometry(2.5, 12, 4);
+    // --- Tobby's Signature Red Necktie ---
+    const tieGeo = new THREE.ConeGeometry(1.8, 10, 4);
     const tieMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.5 });
     const tieMesh = new THREE.Mesh(tieGeo, tieMat);
-    tieMesh.position.set(0, 20, 10);
+    tieMesh.position.set(0, 23.5, 6.8);
     tieMesh.rotation.x = -Math.PI / 12;
     group.add(tieMesh);
 
-    // Head
-    const headGeo = new THREE.SphereGeometry(9, 16, 16);
+    // --- Head ---
+    const headGeo = new THREE.SphereGeometry(6, 16, 16);
     const headMat = new THREE.MeshStandardMaterial({
-      color: 0xe5bfa1,
+      color: skinColor,
       roughness: 0.4,
     });
     const headMesh = new THREE.Mesh(headGeo, headMat);
-    headMesh.position.y = 33;
+    const headY = 11 + 2.2 + torsoHeight + 5; // y = 32.2
+    headMesh.position.y = headY;
     group.add(headMesh);
 
-    // Tobby's Iconic Circular Spectacles with Red Glowing Threat Lenses
+    // --- Spectacles with Red Glowing Threat Lenses ---
     const glassesGroup = new THREE.Group();
-    const frameGeo = new THREE.TorusGeometry(3.8, 0.8, 6, 16);
+    const frameGeo = new THREE.TorusGeometry(2.6, 0.6, 6, 16);
     const frameMat = new THREE.MeshBasicMaterial({ color: 0x111827 });
     
     const leftGlass = new THREE.Mesh(frameGeo, frameMat);
-    leftGlass.position.set(-4.5, 0, 0);
+    leftGlass.position.set(-3.2, 0, 0);
     
     const rightGlass = new THREE.Mesh(frameGeo, frameMat);
-    rightGlass.position.set(4.5, 0, 0);
+    rightGlass.position.set(3.2, 0, 0);
 
-    const lensGeo = new THREE.SphereGeometry(3.2, 8, 8);
+    const lensGeo = new THREE.SphereGeometry(2.2, 8, 8);
     const lensMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
     const leftLens = new THREE.Mesh(lensGeo, lensMat);
-    leftLens.position.set(-4.5, 0, 1.5);
+    leftLens.position.set(-3.2, 0, 0.8);
     const rightLens = leftLens.clone();
-    rightLens.position.x = 4.5;
+    rightLens.position.x = 3.2;
 
     glassesGroup.add(leftGlass);
     glassesGroup.add(rightGlass);
     glassesGroup.add(leftLens);
     glassesGroup.add(rightLens);
-    glassesGroup.position.set(0, 34, 8);
+    glassesGroup.position.set(0, headY + 0.4, 5.2);
     group.add(glassesGroup);
 
-    // Hair
-    const hairGeo = new THREE.SphereGeometry(9.6, 8, 8, 0, Math.PI * 2, 0, Math.PI / 2);
-    const hairMat = new THREE.MeshStandardMaterial({ color: 0x1c1917, roughness: 0.9 });
+    // --- Hair (Combed corporate look) ---
+    const hairGeo = new THREE.SphereGeometry(6.4, 8, 8, 0, Math.PI * 2, 0, Math.PI / 1.8);
+    const hairMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.9 });
     const hairMesh = new THREE.Mesh(hairGeo, hairMat);
-    hairMesh.position.y = 34;
+    hairMesh.position.set(0, headY + 1.2, -0.5);
+    hairMesh.rotation.x = -Math.PI / 15;
     group.add(hairMesh);
+
+    // Extra lock of hair on front
+    const hairSpikeGeo = new THREE.ConeGeometry(1.2, 3, 4);
+    const hairSpike = new THREE.Mesh(hairSpikeGeo, hairMat);
+    hairSpike.position.set(2, headY + 4, 4);
+    hairSpike.rotation.x = Math.PI / 3;
+    hairSpike.rotation.z = -Math.PI / 6;
+    group.add(hairSpike);
+
+    // --- Legs ---
+    const legLength = 11;
+    const legGeo = new THREE.CylinderGeometry(1.8, 1.4, legLength, 8);
+    const legMat = new THREE.MeshStandardMaterial({ color: pantsColor, roughness: 0.7 });
+
+    const leftLegGroup = new THREE.Group();
+    leftLegGroup.name = "leftLeg";
+    leftLegGroup.position.set(-3.2, 11, 0);
+    const leftLegMesh = new THREE.Mesh(legGeo, legMat);
+    leftLegMesh.position.y = -legLength / 2;
+    leftLegMesh.castShadow = true;
+    leftLegMesh.receiveShadow = true;
+    leftLegGroup.add(leftLegMesh);
+
+    // Shiny black business shoe
+    const shoeGeo = new THREE.BoxGeometry(2.4, 1.8, 4.2);
+    const shoeMat = new THREE.MeshStandardMaterial({ color: shoeColor, roughness: 0.1, metalness: 0.8 });
+    const leftShoe = new THREE.Mesh(shoeGeo, shoeMat);
+    leftShoe.position.set(0, -legLength, 0.8);
+    leftLegGroup.add(leftShoe);
+
+    group.add(leftLegGroup);
+
+    const rightLegGroup = new THREE.Group();
+    rightLegGroup.name = "rightLeg";
+    rightLegGroup.position.set(3.2, 11, 0);
+    const rightLegMesh = new THREE.Mesh(legGeo, legMat);
+    rightLegMesh.position.y = -legLength / 2;
+    rightLegMesh.castShadow = true;
+    rightLegMesh.receiveShadow = true;
+    rightLegGroup.add(rightLegMesh);
+
+    const rightShoe = leftShoe.clone();
+    rightLegGroup.add(rightShoe);
+
+    group.add(rightLegGroup);
+
+    // --- Arms ---
+    const armLength = 12;
+    const armGeo = new THREE.CylinderGeometry(1.6, 1.3, armLength, 8);
+    const armMat = new THREE.MeshStandardMaterial({ color: coatColor, roughness: 0.15, metalness: 0.5 });
+    const handGeo = new THREE.SphereGeometry(1.5, 8, 8);
+    const handMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.5 });
+
+    const shoulderY = 11 + 2.2 + torsoHeight - 1.8; // y = 25.4
+
+    const leftArmGroup = new THREE.Group();
+    leftArmGroup.name = "leftArm";
+    leftArmGroup.position.set(-8.2, shoulderY, 0);
+    const leftArmMesh = new THREE.Mesh(armGeo, armMat);
+    leftArmMesh.position.y = -armLength / 2;
+    leftArmMesh.castShadow = true;
+    leftArmMesh.receiveShadow = true;
+    leftArmGroup.add(leftArmMesh);
+
+    const leftHand = new THREE.Mesh(handGeo, handMat);
+    leftHand.position.set(0, -armLength, 0);
+    leftArmGroup.add(leftHand);
+
+    group.add(leftArmGroup);
+
+    const rightArmGroup = new THREE.Group();
+    rightArmGroup.name = "rightArm";
+    rightArmGroup.position.set(8.2, shoulderY, 0);
+    const rightArmMesh = new THREE.Mesh(armGeo, armMat);
+    rightArmMesh.position.y = -armLength / 2;
+    rightArmMesh.castShadow = true;
+    rightArmMesh.receiveShadow = true;
+    rightArmGroup.add(rightArmMesh);
+
+    const rightHand = leftHand.clone();
+    rightArmGroup.add(rightHand);
+
+    group.add(rightArmGroup);
 
     return group;
   };
@@ -2067,6 +2292,31 @@ export function GameCanvas({
       playerMesh.position.set(p.x, 0, p.y);
       playerMesh.rotation.y = -p.angle;
 
+      // Dynamic limb swing animations
+      const isMoving = p.isMoving;
+      const walkCycle = Date.now() / 1000;
+      const speedFactor = p.isBurstActive ? 20 : 12;
+
+      const leftLeg = playerMesh.getObjectByName("leftLeg");
+      const rightLeg = playerMesh.getObjectByName("rightLeg");
+      const leftArm = playerMesh.getObjectByName("leftArm");
+      const rightArm = playerMesh.getObjectByName("rightArm");
+
+      if (isMoving) {
+        const swingAngle = Math.sin(walkCycle * speedFactor) * 0.45;
+        if (leftLeg) leftLeg.rotation.x = swingAngle;
+        if (rightLeg) rightLeg.rotation.x = -swingAngle;
+        if (leftArm) leftArm.rotation.x = -swingAngle * 0.75;
+        if (rightArm) rightArm.rotation.x = swingAngle * 0.75;
+      } else {
+        // Return smoothly to idle state with breathing effect
+        const breath = Math.sin(walkCycle * 2.5) * 0.05;
+        if (leftLeg) leftLeg.rotation.x += (0 - leftLeg.rotation.x) * 0.15;
+        if (rightLeg) rightLeg.rotation.x += (0 - rightLeg.rotation.x) * 0.15;
+        if (leftArm) leftArm.rotation.x += (breath - leftArm.rotation.x) * 0.15;
+        if (rightArm) rightArm.rotation.x += (-breath - rightArm.rotation.x) * 0.15;
+      }
+
       const isSpeeding = p.isBurstActive || (p.hyperChargeTime && p.hyperChargeTime > 0);
       const ring = playerMesh.children[0] as THREE.Mesh;
       if (ring && ring.material) {
@@ -2127,6 +2377,31 @@ export function GameCanvas({
         if (tMesh) {
           tMesh.position.set(t.x, 0, t.y);
           tMesh.rotation.y = -t.angle;
+
+          // Dynamic limb swing animations
+          const isTobbyMoving = t.isMoving;
+          const tobbyWalkCycle = (Date.now() + idx * 400) / 1000;
+          const tobbySpeedFactor = t.aiState === AIState.CHASING ? 18 : 10;
+
+          const tLeftLeg = tMesh.getObjectByName("leftLeg");
+          const tRightLeg = tMesh.getObjectByName("rightLeg");
+          const tLeftArm = tMesh.getObjectByName("leftArm");
+          const tRightArm = tMesh.getObjectByName("rightArm");
+
+          if (isTobbyMoving) {
+            const swingAngle = Math.sin(tobbyWalkCycle * tobbySpeedFactor) * 0.5;
+            if (tLeftLeg) tLeftLeg.rotation.x = swingAngle;
+            if (tRightLeg) tRightLeg.rotation.x = -swingAngle;
+            if (tLeftArm) tLeftArm.rotation.x = -swingAngle * 0.8;
+            if (tRightArm) tRightArm.rotation.x = swingAngle * 0.8;
+          } else {
+            // Idle breathing cycle
+            const tBreath = Math.sin(tobbyWalkCycle * 2) * 0.04;
+            if (tLeftLeg) tLeftLeg.rotation.x += (0 - tLeftLeg.rotation.x) * 0.2;
+            if (tRightLeg) tRightLeg.rotation.x += (0 - tRightLeg.rotation.x) * 0.2;
+            if (tLeftArm) tLeftArm.rotation.x += (tBreath - tLeftArm.rotation.x) * 0.2;
+            if (tRightArm) tRightArm.rotation.x += (-tBreath - tRightArm.rotation.x) * 0.2;
+          }
 
           const bobSpeed = t.aiState === AIState.CHASING ? 15 : 6;
           tMesh.position.y = Math.abs(Math.sin(Date.now() / 1000 * bobSpeed)) * 1.8;

@@ -47,6 +47,7 @@ export interface PlayerState {
 
   // Hyper rush duration helper
   hyperChargeTime: number; // in seconds
+  isMoving?: boolean;
 }
 
 export interface TobbyState {
@@ -75,6 +76,8 @@ export interface TobbyState {
   wiggleOffset: number;
   isHallwaySpecial?: boolean;
   isStationary?: boolean;
+  isMoving?: boolean;
+  isChasing?: boolean;
 }
 
 export interface PuddleState {
