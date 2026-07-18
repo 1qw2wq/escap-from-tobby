@@ -55,7 +55,7 @@ export function Intro({ onProceed }: IntroProps) {
           onClick={() => handleTabClick("tobby_intel")}
           className={`flex-1 py-3 px-4 rounded-t-xl font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-t border-x transition-all duration-200 ${
             activeTab === "tobby_intel"
-              ? "bg-slate-905 border-red-950 text-red-400 border-b-2 border-b-red-500 shadow-lg bg-red-950/10"
+              ? "bg-slate-900 border-red-950 text-red-400 border-b-2 border-b-red-500 shadow-lg bg-red-950/10"
               : "bg-slate-950/20 border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30"
           }`}
         >
@@ -67,7 +67,7 @@ export function Intro({ onProceed }: IntroProps) {
           onClick={() => handleTabClick("survival_manual")}
           className={`flex-1 py-3 px-4 rounded-t-xl font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-t border-x transition-all duration-200 ${
             activeTab === "survival_manual"
-              ? "bg-slate-905 border-emerald-950 text-emerald-400 border-b-2 border-b-emerald-400 shadow-lg bg-emerald-950/10"
+              ? "bg-slate-900 border-emerald-950 text-emerald-400 border-b-2 border-b-emerald-400 shadow-lg bg-emerald-950/10"
               : "bg-slate-950/20 border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30"
           }`}
         >
@@ -79,11 +79,11 @@ export function Intro({ onProceed }: IntroProps) {
           onClick={() => handleTabClick("class_roster")}
           className={`flex-1 py-3 px-4 rounded-t-xl font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-t border-x transition-all duration-200 ${
             activeTab === "class_roster"
-              ? "bg-slate-905 border-rose-950 text-rose-400 border-b-2 border-b-rose-400 shadow-lg bg-rose-950/10"
+              ? "bg-slate-900 border-rose-950 text-rose-400 border-b-2 border-b-rose-400 shadow-lg bg-rose-950/10"
               : "bg-slate-950/20 border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30"
           }`}
         >
-          <ShieldCheck size={14} className={activeTab === "class_roster" ? "text-rose-405" : "text-slate-400"} />
+          <ShieldCheck size={14} className={activeTab === "class_roster" ? "text-rose-400" : "text-slate-400"} />
           <span>III. Playable Classes Spec List</span>
         </button>
       </div>
@@ -133,7 +133,7 @@ export function Intro({ onProceed }: IntroProps) {
                 </div>
                 <h3 className="text-lg font-bold font-mono text-red-200 mb-4 flex justify-between items-center">
                   <span>5 Anomalous Attack Parameters</span>
-                  <span className="text-xs text-red-500 font-bold border border-red-550/30 px-2 py-0.5 rounded uppercase">MAX SUSCEPTIBILITY</span>
+                  <span className="text-xs text-red-500 font-bold border border-red-500/30 px-2 py-0.5 rounded uppercase">MAX SUSCEPTIBILITY</span>
                 </h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -211,7 +211,7 @@ export function Intro({ onProceed }: IntroProps) {
             {/* Controls Guide */}
             <div className="lg:col-span-7 p-6 rounded-2xl border border-emerald-950/40 bg-slate-900/20 backdrop-blur-sm shadow-xl flex flex-col justify-between">
               <div>
-                <div className="flex items-center gap-2 text-emerald-450 font-mono text-xs font-bold uppercase tracking-wider mb-3">
+                <div className="flex items-center gap-2 text-emerald-400 font-mono text-xs font-bold uppercase tracking-wider mb-3">
                   <Compass size={14} /> OPERATIONAL NAVIGATION SCHEMATIC
                 </div>
                 <h3 className="text-xl font-bold font-mono text-slate-100 mb-4">
@@ -220,7 +220,7 @@ export function Intro({ onProceed }: IntroProps) {
 
                 <div className="space-y-4 font-mono text-xs">
                   <div className="flex items-start gap-3">
-                    <span className="px-2 py-1 bg-slate-900 border border-slate-850 rounded text-amber-400 font-bold font-mono">WASD / ARROWS</span>
+                    <span className="px-2 py-1 bg-slate-900 border border-slate-800 rounded text-amber-400 font-bold font-mono">WASD / ARROWS</span>
                     <div>
                       <h4 className="text-slate-200 font-bold uppercase text-[11px]">Primary Keyboard Navigation</h4>
                       <p className="text-slate-400 text-[10px] leading-relaxed pt-0.5">
@@ -230,7 +230,7 @@ export function Intro({ onProceed }: IntroProps) {
                   </div>
 
                   <div className="flex items-start gap-4">
-                    <div className="px-2 py-1 bg-slate-900 border border-slate-850 rounded text-sky-400 font-bold font-mono flex items-center gap-1">
+                    <div className="px-2 py-1 bg-slate-900 border border-slate-800 rounded text-sky-400 font-bold font-mono flex items-center gap-1">
                       <MousePointer size={11} /> CLICK & DRAG
                     </div>
                     <div>
@@ -242,7 +242,7 @@ export function Intro({ onProceed }: IntroProps) {
                   </div>
 
                   <div className="flex items-start gap-6">
-                    <span className="px-2 py-1 bg-slate-900 border border-slate-850 rounded text-rose-450 font-bold font-mono">SPACEKEY</span>
+                    <span className="px-2 py-1 bg-slate-900 border border-slate-800 rounded text-rose-400 font-bold font-mono">SPACEKEY</span>
                     <div>
                       <h4 className="text-slate-200 font-bold uppercase text-[11px]">Deploy Unique Class Skill</h4>
                       <p className="text-slate-400 text-[10px] leading-relaxed pt-0.5">
@@ -361,8 +361,8 @@ export function Intro({ onProceed }: IntroProps) {
                     <span className="text-red-400 font-mono font-bold uppercase text-[10px] tracking-wider block mb-1">
                       ACTIVE SKILL: PACIFY CHARM (SPACE)
                     </span>
-                    <p className="text-[10px] text-red-305 leading-relaxed font-mono">
-                      Invokes a classroom calmness spell. <strong className="text-red-350">PACIFIES ALL TOBBY CLONES</strong> on the current floor level for <strong className="text-emerald-400 font-bold">15 SECONDS</strong>! Pacified Tobbys halt their aggression immediately, stop chasing, and deal absolutely zero contact damage. Cooldown: 45s.
+                    <p className="text-[10px] text-rose-300 leading-relaxed font-mono">
+                      Invokes a classroom calmness spell. <strong className="text-red-400">PACIFIES ALL TOBBY CLONES</strong> on the current floor level for <strong className="text-emerald-400 font-bold">15 SECONDS</strong>! Pacified Tobbys halt their aggression immediately, stop chasing, and deal absolutely zero contact damage. Cooldown: 45s.
                     </p>
                   </div>
                 </div>
@@ -387,15 +387,15 @@ export function Intro({ onProceed }: IntroProps) {
 
                 <div className="space-y-3.5 text-xs text-slate-300 leading-relaxed font-sans">
                   <p>
-                    The balanced, swift runner is built for escaping through rapid speed. He starts with balanced health (<strong className="text-sky-450">20 Health Points</strong>) and is able to traverse maps fluently.
+                    The balanced, swift runner is built for escaping through rapid speed. He starts with balanced health (<strong className="text-sky-400">20 Health Points</strong>) and is able to traverse maps fluently.
                   </p>
                   
                   <div className="p-3 bg-sky-950/20 border border-sky-900/30 rounded-xl">
                     <span className="text-sky-400 font-mono font-bold uppercase text-[10px] tracking-wider block mb-1">
                       PASSIVE: INHERENT FLUID RUNNING
                     </span>
-                    <p className="text-[10px] text-sky-305 leading-relaxed font-mono">
-                      No cooldown active keys to worry about! Possesses a permanent, hyper-agile base speed of <strong className="text-sky-450 font-bold">1.5x (75 px/s)</strong>. Outruns most Tobby patrol clusters with simple, rapid athletic maneuvers.
+                    <p className="text-[10px] text-sky-300 leading-relaxed font-mono">
+                      No cooldown active keys to worry about! Possesses a permanent, hyper-agile base speed of <strong className="text-sky-400 font-bold">1.5x (75 px/s)</strong>. Outruns most Tobby patrol clusters with simple, rapid athletic maneuvers.
                     </p>
                   </div>
                 </div>
@@ -415,7 +415,7 @@ export function Intro({ onProceed }: IntroProps) {
         <button
           onClick={handleProceedWithSound}
           id="btn-goto-characters"
-          className="px-14 py-4 rounded-xl bg-gradient-to-r from-red-650 via-rose-600 to-rose-700 hover:from-red-600 hover:to-rose-600 text-white font-mono font-bold tracking-widest text-lg shadow-[0_0_20px_rgba(244,63,94,0.3)] hover:shadow-[0_0_35px_rgba(244,63,94,0.6)] transition-all duration-300 transform active:scale-95 flex items-center gap-2 group cursor-pointer"
+          className="px-14 py-4 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-rose-700 hover:from-red-600 hover:to-rose-600 text-white font-mono font-bold tracking-widest text-lg shadow-[0_0_20px_rgba(244,63,94,0.3)] hover:shadow-[0_0_35px_rgba(244,63,94,0.6)] transition-all duration-300 transform active:scale-95 flex items-center gap-2 group cursor-pointer"
         >
           <span>ENTER CHARACTER RECRUITMENT</span>
           <Play size={18} className="fill-white group-hover:translate-x-1 transition-transform" />

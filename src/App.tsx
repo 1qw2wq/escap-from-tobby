@@ -114,7 +114,7 @@ export default function App() {
           </p>
 
           <p className="text-slate-300 text-sm leading-relaxed mb-8 border-y border-slate-900 py-6">
-            You successfully navigated the dark concrete stairs downwards. You are now stepping onto <strong className="text-rose-450">Floor Level {currentFloor}</strong>. 
+            You successfully navigated the dark concrete stairs downwards. You are now stepping onto <strong className="text-rose-400">Floor Level {currentFloor}</strong>. 
             The building grows colder as you go deeper, and the echoes of Tobby's footsteps are amplifying. Prepare your defenses!
           </p>
 
@@ -224,7 +224,7 @@ export default function App() {
                 </div>
               </div>
             </div>
-            <div className="mt-4 text-[9px] text-rose-550 border-t border-red-950/30 pt-2 flex justify-between">
+            <div className="mt-4 text-[9px] text-rose-400 border-t border-red-950/30 pt-2 flex justify-between">
               <span>ACTIVE CLONES PER FLOOR: 5 - 7 SPECIMENS</span>
               <span className="font-bold uppercase">Tactical Advice: Keep moving!</span>
             </div>

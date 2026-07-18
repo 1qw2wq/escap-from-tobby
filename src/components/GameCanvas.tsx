@@ -4417,7 +4417,7 @@ export function GameCanvas({
             <div>
               <div className="flex justify-between items-baseline mb-1 text-xs">
                 <span className="text-slate-400 font-bold flex items-center gap-1.5">
-                  <Zap size={14} className="text-amber-400 fill-amber-450/20" /> BURST SPRINT SENSE:
+                  <Zap size={14} className="text-amber-400 fill-amber-400/20" /> BURST SPRINT SENSE:
                 </span>
                 <span className="font-extrabold text-amber-400 text-sm">
                   {playerBurstEnergy}%
@@ -4635,7 +4635,7 @@ export function GameCanvas({
             <button
               onClick={() => setIsGuideOpen(true)}
               id="game-guide-btn"
-              className="px-2.5 py-2.5 rounded-lg border border-red-900 bg-red-950/45 text-red-450 hover:text-white hover:bg-red-900 transition flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider"
+              className="px-2.5 py-2.5 rounded-lg border border-red-900 bg-red-950/45 text-red-400 hover:text-white hover:bg-red-900 transition flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider"
               title="Open Survival Handbook Guide"
             >
               <BookOpen size={14} />

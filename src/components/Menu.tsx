@@ -134,7 +134,7 @@ export function Menu({ onStartGame }: MenuProps) {
                   </span>
                   <span className="font-bold text-slate-200">{char.hp} HP</span>
                 </div>
-                <div className="w-full h-1.5 bg-slate-850 rounded-full overflow-hidden">
+                <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-red-600 rounded-full"
                     style={{ width: `${(char.hp / 30) * 100}%` }}
@@ -191,7 +191,7 @@ export function Menu({ onStartGame }: MenuProps) {
               setIsGuideOpen(true);
             }}
             id="menu-open-guide-btn"
-            className="mt-2.5 w-full py-1.5 px-3 rounded-lg bg-red-950/40 hover:bg-red-900/60 transition-all border border-red-900/40 text-[10px] text-red-450 hover:text-white flex items-center justify-center gap-1.5 font-bold uppercase tracking-wider"
+            className="mt-2.5 w-full py-1.5 px-3 rounded-lg bg-red-950/40 hover:bg-red-900/60 transition-all border border-red-900/40 text-[10px] text-red-400 hover:text-white flex items-center justify-center gap-1.5 font-bold uppercase tracking-wider"
           >
             <BookOpen size={12} /> OPEN FULL SURVIVAL HANDBOOK
           </button>

@@ -82,17 +82,17 @@ export function SurvivalGuide({ isOpen, onClose }: SurvivalGuideProps) {
                 </h4>
                 <div className="space-y-3 mt-1">
                   <div className="flex items-start gap-2">
-                    <span className="font-bold text-slate-100 flex-shrink-0 min-w-[100px]"><kbd className="px-1.5 py-0.5 bg-slate-900 border border-slate-850 rounded">SPACEBAR</kbd>:</span>
+                    <span className="font-bold text-slate-100 flex-shrink-0 min-w-[100px]"><kbd className="px-1.5 py-0.5 bg-slate-900 border border-slate-800 rounded">SPACEBAR</kbd>:</span>
                     <span>Activates your chosen student's Class Special Defense capacity. Check Cooldown clocks on the bottom HUD sidebar.</span>
                   </div>
                   <div className="flex items-start gap-2 pt-2 border-t border-slate-900">
-                    <span className="font-bold text-slate-100 flex-shrink-0 min-w-[100px]"><kbd className="px-1.5 py-0.5 bg-slate-900 border border-slate-850 rounded">E</kbd> or <kbd className="px-1.5 py-0.5 bg-slate-900 border border-slate-850 rounded">F</kbd>:</span>
+                    <span className="font-bold text-slate-100 flex-shrink-0 min-w-[100px]"><kbd className="px-1.5 py-0.5 bg-slate-900 border border-slate-800 rounded">E</kbd> or <kbd className="px-1.5 py-0.5 bg-slate-900 border border-slate-800 rounded">F</kbd>:</span>
                     <span><strong>MELEE STRIKE / PUNCH:</strong> Knocks down Tobby clones in a short visual hemisphere arc. Inflicts 2 Damage to clear paths. 
                     <br />
                     <span className="text-amber-500 font-semibold uppercase text-[10px]">▲ NOTE: Supports a highly strict, tactical 1.0 second cooldown period.</span></span>
                   </div>
                   <div className="flex items-start gap-2 pt-2 border-t border-slate-900">
-                    <span className="font-bold text-slate-100 flex-shrink-0 min-w-[100px]"><kbd className="px-1.5 py-0.5 bg-slate-900 border border-slate-850 rounded">L_SHIFT</kbd>:</span>
+                    <span className="font-bold text-slate-100 flex-shrink-0 min-w-[100px]"><kbd className="px-1.5 py-0.5 bg-slate-900 border border-slate-800 rounded">L_SHIFT</kbd>:</span>
                     <span><strong>SENSE BURST MODE:</strong> Consumes burst energy to step into visual golden bullet hyper-speed mode. Recharge occurs passively.</span>
                   </div>
                 </div>
