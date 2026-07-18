@@ -2772,6 +2772,595 @@ export function GameCanvas({
     });
   };
 
+  const checkAndInitThree = () => {
+    const canvas = canvas3DRef.current;
+    if (!canvas) return;
+
+    if (threeRendererRef.current) {
+      return;
+    }
+
+    try {
+      initThree();
+      rebuildObstacles3D();
+      buildRealWalls3D();
+      addCeilingLights3D();
+    } catch (e) {
+      console.error("Three.js initialization failed:", e);
+    }
+  };
+
+  const createModelForObstacle = (obs: GameObstacle): THREE.Group => {
+    const group = new THREE.Group();
+    const name = obs.name || "";
+    const w = obs.width;
+    const h = obs.height;
+
+    // --- 1. CHAIR / STOOL MODEL ---
+    if (name.includes("Chair") || name.includes("Stool")) {
+      const seatGeo = new THREE.BoxGeometry(w, 1.2, h);
+      const seatTex = getProceduralTexture("#1e3a8a", 0.05, "noise");
+      const seatMat = new THREE.MeshStandardMaterial({ map: seatTex, roughness: 0.8 });
+      const seat = new THREE.Mesh(seatGeo, seatMat);
+      seat.position.y = 7;
+      group.add(seat);
+
+      if (!name.includes("Stool")) {
+        const backGeo = new THREE.BoxGeometry(w, 8, 1.2);
+        const back = new THREE.Mesh(backGeo, seatMat);
+        back.position.set(0, 11.6, -h / 2 + 0.6);
+        group.add(back);
+      }
+
+      const legGeo = new THREE.CylinderGeometry(0.5, 0.5, 6.4, 6);
+      const legTex = getProceduralTexture("#94a3b8", 0.02, "brushed");
+      const legMat = new THREE.MeshStandardMaterial({ map: legTex, metalness: 0.9, roughness: 0.1 });
+      const offsets = [
+        [-w / 2 + 1, -h / 2 + 1],
+        [w / 2 - 1, -h / 2 + 1],
+        [-w / 2 + 1, h / 2 - 1],
+        [w / 2 - 1, h / 2 - 1],
+      ];
+      offsets.forEach(([ox, oz]) => {
+        const leg = new THREE.Mesh(legGeo, legMat);
+        leg.position.set(ox, 3.2, oz);
+        group.add(leg);
+      });
+    }
+
+    // --- 2. POTTED PLANT MODEL ---
+    else if (name.includes("Plant") || name.includes("Pot")) {
+      const potGeo = new THREE.CylinderGeometry(w / 2.2, w / 2.8, 6, 8);
+      const potTex = getProceduralTexture("#ca8a04", 0.05, "noise");
+      const potMat = new THREE.MeshStandardMaterial({ map: potTex, roughness: 0.9 });
+      const pot = new THREE.Mesh(potGeo, potMat);
+      pot.position.y = 3;
+      group.add(pot);
+
+      const stemGeo = new THREE.CylinderGeometry(0.6, 0.6, 8, 6);
+      const stemTex = getProceduralTexture("#78350f", 0.05, "noise");
+      const stemMat = new THREE.MeshStandardMaterial({ map: stemTex, roughness: 0.9 });
+      const stem = new THREE.Mesh(stemGeo, stemMat);
+      stem.position.y = 10;
+      group.add(stem);
+
+      const leafTex = getProceduralTexture("#15803d", 0.06, "noise");
+      const leafMat = new THREE.MeshStandardMaterial({ map: leafTex, roughness: 0.9 });
+      
+      const fol1 = new THREE.Mesh(new THREE.SphereGeometry(w / 1.8, 8, 8), leafMat);
+      fol1.position.y = 13;
+      group.add(fol1);
+
+      const fol2 = new THREE.Mesh(new THREE.SphereGeometry(w / 2.2, 8, 8), leafMat);
+      fol2.position.set(1.5, 16.5, -0.5);
+      group.add(fol2);
+
+      const fol3 = new THREE.Mesh(new THREE.SphereGeometry(w / 2.8, 8, 8), leafMat);
+      fol3.position.set(-1, 19.5, 1);
+      group.add(fol3);
+    }
+
+    // --- 3. LOCKERS MODEL ---
+    else if (name.includes("Locker")) {
+      const lockerHeight = 26;
+      const lockerGeo = new THREE.BoxGeometry(w, lockerHeight, h);
+      const lockerTex = getProceduralTexture("#475569", 0.04, "brushed");
+      const lockerMat = new THREE.MeshStandardMaterial({ map: lockerTex, metalness: 0.8, roughness: 0.3 });
+      const locker = new THREE.Mesh(lockerGeo, lockerMat);
+      locker.position.y = lockerHeight / 2;
+      group.add(locker);
+
+      const numDoors = Math.max(1, Math.round(w / 10));
+      for (let i = 0; i < numDoors; i++) {
+        const offsetPct = (i + 0.5) / numDoors - 0.5;
+        const dx = w * offsetPct;
+
+        const handleGeo = new THREE.BoxGeometry(0.8, 4, 0.6);
+        const handleMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.9, roughness: 0.1 });
+        const handle = new THREE.Mesh(handleGeo, handleMat);
+        handle.position.set(dx + (w / numDoors) * 0.25, 13, h / 2 + 0.2);
+        group.add(handle);
+
+        for (let v = 0; v < 3; v++) {
+          const ventGeo = new THREE.BoxGeometry((w / numDoors) * 0.6, 0.3, 0.2);
+          const ventMat = new THREE.MeshBasicMaterial({ color: 0x111827 });
+          const vent = new THREE.Mesh(ventGeo, ventMat);
+          vent.position.set(dx, 21 + v * 1.2, h / 2 + 0.1);
+          group.add(vent);
+        }
+      }
+    }
+
+    // --- 4. VENDING MACHINE MODEL ---
+    else if (name.includes("Vending")) {
+      const vendHeight = 28;
+      const frameGeo = new THREE.BoxGeometry(w, vendHeight, h);
+      const frameTex = getProceduralTexture("#dc2626", 0.04, "brushed");
+      const frameMat = new THREE.MeshStandardMaterial({ map: frameTex, roughness: 0.3 });
+      const frame = new THREE.Mesh(frameGeo, frameMat);
+      frame.position.y = vendHeight / 2;
+      group.add(frame);
+
+      const glassGeo = new THREE.BoxGeometry(w - 6, 12, 1.5);
+      const glassMat = new THREE.MeshStandardMaterial({ color: 0x111827, metalness: 0.9, roughness: 0.05 });
+      const glass = new THREE.Mesh(glassGeo, glassMat);
+      glass.position.set(0, 18, h / 2 + 0.2);
+      group.add(glass);
+
+      const prodColors = [0xef4444, 0x10b981, 0xf59e0b, 0x3b82f6];
+      for (let r = 0; r < 3; r++) {
+        for (let c = 0; c < 3; c++) {
+          const col = prodColors[(r + c) % prodColors.length];
+          const prodGeo = new THREE.BoxGeometry(1.5, 2, 0.8);
+          const prodMat = new THREE.MeshStandardMaterial({ color: col });
+          const prod = new THREE.Mesh(prodGeo, prodMat);
+          prod.position.set(-w / 2 + 6 + c * (w / 4), 14 + r * 3, h / 2 + 0.1);
+          group.add(prod);
+        }
+      }
+
+      const glowGeo = new THREE.BoxGeometry(w - 6, 3, 1);
+      const glowMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 1.5 });
+      const glow = new THREE.Mesh(glowGeo, glowMat);
+      glow.position.set(0, 8, h / 2 + 0.2);
+      group.add(glow);
+
+      const dispGeo = new THREE.BoxGeometry(w - 6, 3, 1.5);
+      const dispMat = new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.7 });
+      const disp = new THREE.Mesh(dispGeo, dispMat);
+      disp.position.set(0, 3, h / 2 + 0.1);
+      group.add(disp);
+    }
+
+    // --- 5. COUCH / SOFA MODEL ---
+    else if (name.includes("Sofa") || name.includes("Couch") || name.includes("Cushion")) {
+      const baseGeo = new THREE.BoxGeometry(w, 4, h);
+      const baseTex = getProceduralTexture("#1e293b", 0.05, "noise");
+      const baseMat = new THREE.MeshStandardMaterial({ map: baseTex, roughness: 0.9 });
+      const base = new THREE.Mesh(baseGeo, baseMat);
+      base.position.y = 2;
+      group.add(base);
+
+      const plushGeo = new THREE.BoxGeometry(w - 2, 3, h - 2);
+      const plushTex = getProceduralTexture("#b91c1c", 0.06, "noise");
+      const plushMat = new THREE.MeshStandardMaterial({ map: plushTex, roughness: 0.7 });
+      const plush = new THREE.Mesh(plushGeo, plushMat);
+      plush.position.set(0, 5, 0.5);
+      group.add(plush);
+
+      const backGeo = new THREE.BoxGeometry(w, 10, 3);
+      const back = new THREE.Mesh(backGeo, plushMat);
+      back.position.set(0, 8.5, -h / 2 + 1.5);
+      group.add(back);
+
+      const armGeo = new THREE.BoxGeometry(3, 8, h);
+      const armMat = baseMat;
+      const leftArm = new THREE.Mesh(armGeo, armMat);
+      leftArm.position.set(-w / 2 + 1.5, 5.5, 0);
+      group.add(leftArm);
+
+      const rightArm = new THREE.Mesh(armGeo, armMat);
+      rightArm.position.set(w / 2 - 1.5, 5.5, 0);
+      group.add(rightArm);
+    }
+
+    // --- 6. CABINET / CUPBOARD / SHELF ---
+    else if (name.includes("Cabinet") || name.includes("Shelf") || name.includes("Cupboard") || name.includes("Drawer")) {
+      const cabHeight = 24;
+      const cabGeo = new THREE.BoxGeometry(w, cabHeight, h);
+      const cabTex = getProceduralTexture("#78350f", 0.05, "stripe");
+      const cabMat = new THREE.MeshStandardMaterial({ map: cabTex, roughness: 0.8 });
+      const cab = new THREE.Mesh(cabGeo, cabMat);
+      cab.position.y = cabHeight / 2;
+      group.add(cab);
+
+      const numDrawers = 3;
+      for (let i = 0; i < numDrawers; i++) {
+        const dy = 4 + i * 7.5;
+        const grooveGeo = new THREE.BoxGeometry(w - 2, 0.4, 0.4);
+        const grooveMat = new THREE.MeshBasicMaterial({ color: 0x27272a });
+        const groove = new THREE.Mesh(grooveGeo, grooveMat);
+        groove.position.set(0, dy + 3.5, h / 2 + 0.1);
+        group.add(groove);
+
+        const handleGeo = new THREE.BoxGeometry(w * 0.4, 0.6, 0.6);
+        const handleMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.9 });
+        const handle = new THREE.Mesh(handleGeo, handleMat);
+        handle.position.set(0, dy + 1.8, h / 2 + 0.2);
+        group.add(handle);
+      }
+    }
+
+    // --- 7. CUBICLE DESK MODEL ---
+    else if (name.includes("Cubicle")) {
+      const wallHeight = 16;
+      const wallTex = getProceduralTexture("#475569", 0.04, "concrete");
+      const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.7 });
+      const woodTex = getProceduralTexture("#d97706", 0.05, "stripe");
+      const woodMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.8 });
+
+      const leftWall = new THREE.Mesh(new THREE.BoxGeometry(1.6, wallHeight, h), wallMat);
+      leftWall.position.set(-w / 2 + 0.8, wallHeight / 2, 0);
+      group.add(leftWall);
+
+      const rightWall = new THREE.Mesh(new THREE.BoxGeometry(1.6, wallHeight, h), wallMat);
+      rightWall.position.set(w / 2 - 1.6, wallHeight / 2, 0);
+      group.add(rightWall);
+
+      const backWall = new THREE.Mesh(new THREE.BoxGeometry(w, wallHeight, 1.6), wallMat);
+      backWall.position.set(0, wallHeight / 2, -h / 2 + 0.8);
+      group.add(backWall);
+
+      const deskGeo = new THREE.BoxGeometry(w - 4, 1.2, h - 3);
+      const desk = new THREE.Mesh(deskGeo, woodMat);
+      desk.position.set(0, 10, 1);
+      group.add(desk);
+
+      const pcBase = new THREE.Mesh(new THREE.BoxGeometry(3, 0.4, 3), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
+      pcBase.position.set(0, 10.8, -h / 2 + 4);
+      group.add(pcBase);
+
+      const pcScreen = new THREE.Mesh(new THREE.BoxGeometry(8, 5, 0.6), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
+      pcScreen.position.set(0, 13.5, -h / 2 + 4);
+      group.add(pcScreen);
+
+      const pcGlow = new THREE.Mesh(new THREE.BoxGeometry(7.2, 4.2, 0.2), new THREE.MeshStandardMaterial({ color: 0x0284c7, emissive: 0x0284c7, emissiveIntensity: 0.4 }));
+      pcGlow.position.set(0, 13.5, -h / 2 + 4.4);
+      group.add(pcGlow);
+
+      const kb = new THREE.Mesh(new THREE.BoxGeometry(6, 0.2, 2.2), new THREE.MeshStandardMaterial({ color: 0x334155 }));
+      kb.position.set(0, 10.7, 1.5);
+      group.add(kb);
+    }
+
+    // --- 8. WASHING SINKS MODEL ---
+    else if (name.includes("Sink") || name.includes("Washing")) {
+      const sinkHeight = 12;
+      const counterGeo = new THREE.BoxGeometry(w, sinkHeight, h);
+      const counterMat = new THREE.MeshStandardMaterial({ map: getProceduralTexture("#e2e8f0", 0.03, "noise"), roughness: 0.4 });
+      const counter = new THREE.Mesh(counterGeo, counterMat);
+      counter.position.y = sinkHeight / 2;
+      group.add(counter);
+
+      const numBasins = w > 30 ? 2 : 1;
+      const steelMat = new THREE.MeshStandardMaterial({ map: getProceduralTexture("#cbd5e1", 0.02, "brushed"), metalness: 0.9, roughness: 0.2 });
+      for (let i = 0; i < numBasins; i++) {
+        const offsetPct = numBasins === 2 ? (i === 0 ? -0.25 : 0.25) : 0;
+        const dx = w * offsetPct;
+
+        const basin = new THREE.Mesh(new THREE.BoxGeometry(w / (numBasins + 0.8), 0.2, h - 6), steelMat);
+        basin.position.set(dx, sinkHeight + 0.1, 0);
+        group.add(basin);
+
+        const faucetGeo = new THREE.CylinderGeometry(0.3, 0.3, 3, 6);
+        const faucetMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, metalness: 0.9, roughness: 0.1 });
+        const faucet = new THREE.Mesh(faucetGeo, faucetMat);
+        faucet.position.set(dx, sinkHeight + 1.6, -h / 2 + 2);
+        group.add(faucet);
+
+        const tapGeo = new THREE.BoxGeometry(1.5, 0.3, 0.3);
+        const tap = new THREE.Mesh(tapGeo, faucetMat);
+        tap.position.set(dx, sinkHeight + 3.1, -h / 2 + 2.6);
+        group.add(tap);
+      }
+    }
+
+    // --- 9. STALL / TOILET PARTITION MODEL ---
+    else if (name.includes("Partition") || name.includes("Stall")) {
+      const panelHeight = 20;
+      const panelGeo = new THREE.BoxGeometry(w, panelHeight, h);
+      const panelMat = new THREE.MeshStandardMaterial({ map: getProceduralTexture("#475569", 0.04, "brushed"), roughness: 0.6 });
+      const panel = new THREE.Mesh(panelGeo, panelMat);
+      panel.position.y = 14;
+      group.add(panel);
+
+      const legGeo = new THREE.CylinderGeometry(0.5, 0.5, 4, 6);
+      const legMat = new THREE.MeshStandardMaterial({ color: 0xd1d5db, metalness: 0.9, roughness: 0.1 });
+      const offsets = [-w / 2 + 2, w / 2 - 2];
+      offsets.forEach((ox) => {
+        const leg = new THREE.Mesh(legGeo, legMat);
+        leg.position.set(ox, 2, 0);
+        group.add(leg);
+      });
+    }
+
+    // --- 10. BENCH MODEL ---
+    else if (name.includes("Bench")) {
+      const seatGeo = new THREE.BoxGeometry(w, 1.2, h);
+      const seatMat = new THREE.MeshStandardMaterial({ map: getProceduralTexture("#7c2d12", 0.05, "stripe"), roughness: 0.7 });
+      const seat = new THREE.Mesh(seatGeo, seatMat);
+      seat.position.y = 6;
+      group.add(seat);
+
+      const legGeo = new THREE.BoxGeometry(1.8, 6, h - 2);
+      const legMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.8 });
+      const offsets = [-w / 2 + 3, w / 2 - 3];
+      offsets.forEach((ox) => {
+        const leg = new THREE.Mesh(legGeo, legMat);
+        leg.position.set(ox, 3, 0);
+        group.add(leg);
+      });
+    }
+
+    // --- 11. BARRICADE / BARRICADES / DEBRIS / PLANK BLOCKS ---
+    else if (
+      name.includes("Barricade") ||
+      name.includes("Blockade") ||
+      name.includes("Debris") ||
+      name.includes("Flipped") ||
+      name.includes("Pile")
+    ) {
+      const crate1Geo = new THREE.BoxGeometry(10, 10, 10);
+      const crate1Mat = new THREE.MeshStandardMaterial({ map: getProceduralTexture("#b45309", 0.05, "stripe"), roughness: 0.9 });
+      const crate1 = new THREE.Mesh(crate1Geo, crate1Mat);
+      crate1.position.set(-w / 4, 5, 0);
+      crate1.rotation.set(0.1, 0.25, -0.05);
+      group.add(crate1);
+
+      if (w > 15) {
+        const crate2Geo = new THREE.BoxGeometry(8, 8, 8);
+        const crate2Mat = new THREE.MeshStandardMaterial({ map: getProceduralTexture("#d97706", 0.05, "stripe"), roughness: 0.95 });
+        const crate2 = new THREE.Mesh(crate2Geo, crate2Mat);
+        crate2.position.set(w / 4, 4, 1);
+        crate2.rotation.set(-0.15, -0.3, 0.1);
+        group.add(crate2);
+      }
+
+      const boardGeo = new THREE.BoxGeometry(w + 2, 2.5, 1);
+      const boardMat = new THREE.MeshStandardMaterial({ map: getProceduralTexture("#78350f", 0.06, "stripe"), roughness: 0.9 });
+      const board = new THREE.Mesh(boardGeo, boardMat);
+      board.position.set(0, 8.5, 4.5);
+      board.rotation.z = -0.12;
+      group.add(board);
+
+      const stripeGeo = new THREE.BoxGeometry(w - 2, 1.2, 1.1);
+      const stripeMat = new THREE.MeshBasicMaterial({ color: 0xea580c });
+      const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+      stripe.position.set(0, 8.5, 4.52);
+      stripe.rotation.z = -0.12;
+      group.add(stripe);
+    }
+
+    // --- 12. DESK / TABLE MODEL ---
+    else if (name.includes("Desk") || name.includes("Table") || name.includes("Study")) {
+      const topGeo = new THREE.BoxGeometry(w, 1.6, h);
+      const topTex = getProceduralTexture("#d97706", 0.05, "stripe");
+      const topMat = new THREE.MeshStandardMaterial({ map: topTex, roughness: 0.75 });
+      const top = new THREE.Mesh(topGeo, topMat);
+      top.position.y = 13;
+      group.add(top);
+
+      const legGeo = new THREE.BoxGeometry(1.2, 12.2, 1.2);
+      const legTex = getProceduralTexture("#475569", 0.03, "brushed");
+      const legMat = new THREE.MeshStandardMaterial({ map: legTex, metalness: 0.8, roughness: 0.3 });
+      const offsets = [
+        [-w / 2 + 1, -h / 2 + 1],
+        [w / 2 - 1, -h / 2 + 1],
+        [-w / 2 + 1, h / 2 - 1],
+        [w / 2 - 1, h / 2 - 1],
+      ];
+      offsets.forEach(([ox, oz]) => {
+        const leg = new THREE.Mesh(legGeo, legMat);
+        leg.position.set(ox, 6.1, oz);
+        group.add(leg);
+      });
+
+      if (w > 22) {
+        const backBoardGeo = new THREE.BoxGeometry(w - 4, 8, 0.8);
+        const backBoard = new THREE.Mesh(backBoardGeo, legMat);
+        backBoard.position.set(0, 9, -h / 2 + 1.2);
+        group.add(backBoard);
+      }
+    }
+
+    // --- 13. CHEST / STORAGE BOX MODEL ---
+    else if (name.includes("Box") || name.includes("Chest") || name.includes("Trunk")) {
+      const boxGeo = new THREE.BoxGeometry(w, 12, h);
+      const boxTex = getProceduralTexture("#7c2d12", 0.05, "stripe");
+      const boxMat = new THREE.MeshStandardMaterial({ map: boxTex, roughness: 0.95 });
+      const box = new THREE.Mesh(boxGeo, boxMat);
+      box.position.y = 6;
+      group.add(box);
+
+      const lidGeo = new THREE.BoxGeometry(w + 1, 2, h + 1);
+      const lid = new THREE.Mesh(lidGeo, boxMat);
+      lid.position.y = 13;
+      group.add(lid);
+
+      const cornerGeo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
+      const brassMat = new THREE.MeshStandardMaterial({ color: 0xeab308, metalness: 0.9, roughness: 0.1 });
+      const cornerOffs = [
+        [-w / 2, 0, -h / 2],
+        [w / 2, 0, -h / 2],
+        [-w / 2, 0, h / 2],
+        [w / 2, 0, h / 2],
+        [-w / 2, 12, -h / 2],
+        [w / 2, 12, -h / 2],
+        [-w / 2, 12, h / 2],
+        [w / 2, 12, h / 2],
+      ];
+      cornerOffs.forEach(([ox, oy, oz]) => {
+        const corner = new THREE.Mesh(cornerGeo, brassMat);
+        corner.position.set(ox, oy, oz);
+        group.add(corner);
+      });
+    }
+
+    // --- 14. DEFAULT GENERIC MODEL ---
+    else {
+      const boxGeo = new THREE.BoxGeometry(w, 24, h);
+      const boxTex = getProceduralTexture("#1e293b", 0.05, "concrete");
+      const boxMat = new THREE.MeshStandardMaterial({
+        map: boxTex,
+        metalness: 0.1,
+        roughness: 0.6,
+      });
+      const boxMesh = new THREE.Mesh(boxGeo, boxMat);
+      boxMesh.position.y = 12;
+      group.add(boxMesh);
+
+      const barGeo = new THREE.BoxGeometry(w - 2, 0.4, h - 2);
+      const barMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.4 });
+      const cyanTop = new THREE.Mesh(barGeo, barMat);
+      cyanTop.position.set(0, 12.1, 0);
+      boxMesh.add(cyanTop);
+    }
+
+    group.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+
+    return group;
+  };
+
+  const rebuildObstacles3D = () => {
+    const obstaclesGroup = obstaclesGroupRef.current;
+    if (!obstaclesGroup) return;
+
+    while (obstaclesGroup.children.length > 0) {
+      obstaclesGroup.remove(obstaclesGroup.children[0]);
+    }
+
+    const activeObs = currentFloorObstacles;
+    activeObs.forEach((obs) => {
+      const width = obs.width;
+      const height = obs.height;
+      
+      const modelGroup = createModelForObstacle(obs);
+      modelGroup.position.set(obs.x + width / 2, 0, obs.y + height / 2);
+      obstaclesGroup.add(modelGroup);
+    });
+  };
+
+  const create3DItemMesh = (type: ItemType): THREE.Group => {
+    const group = new THREE.Group();
+    const animGroup = new THREE.Group();
+    animGroup.name = "animatedGroup";
+    
+    if (type === ItemType.MEDICINE) {
+      const caseGeo = new THREE.BoxGeometry(11, 7, 4);
+      const caseMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.6 });
+      const suitcase = new THREE.Mesh(caseGeo, caseMat);
+      suitcase.rotation.x = Math.PI / 6;
+      animGroup.add(suitcase);
+
+      const crossH = new THREE.Mesh(new THREE.BoxGeometry(5, 1.2, 1.2), new THREE.MeshBasicMaterial({ color: 0x22c55e }));
+      const crossV = new THREE.Mesh(new THREE.BoxGeometry(1.2, 5, 1.2), new THREE.MeshBasicMaterial({ color: 0x22c55e }));
+      crossH.position.set(0, 5, 0);
+      crossV.position.set(0, 5, 0);
+      animGroup.add(crossH);
+      animGroup.add(crossV);
+    } else if (type === ItemType.CATNIP) {
+      const pouchGeo = new THREE.SphereGeometry(4.5, 8, 8);
+      const pouchMat = new THREE.MeshStandardMaterial({ color: 0xc084fc, roughness: 0.8 });
+      const pouch = new THREE.Mesh(pouchGeo, pouchMat);
+      animGroup.add(pouch);
+      
+      const ringGeo = new THREE.RingGeometry(5, 6, 8);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0xa855f7, side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 1.5;
+      animGroup.add(ring);
+    } else if (type === ItemType.ENERGY_CAN) {
+      const canGeo = new THREE.CylinderGeometry(3.2, 3.2, 8, 12);
+      const canMat = new THREE.MeshStandardMaterial({ color: 0xf97316, metalness: 0.8, roughness: 0.1 });
+      const can = new THREE.Mesh(canGeo, canMat);
+      can.rotation.x = Math.PI / 8;
+      animGroup.add(can);
+    } else if (type === ItemType.EMP) {
+      const coreGeo = new THREE.OctahedronGeometry(5, 0);
+      const coreMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4, wireframe: true });
+      const core = new THREE.Mesh(coreGeo, coreMat);
+      animGroup.add(core);
+
+      const coreInner = new THREE.Mesh(new THREE.SphereGeometry(2.5, 8, 8), new THREE.MeshBasicMaterial({ color: 0x22d3ee }));
+      animGroup.add(coreInner);
+    }
+    
+    group.add(animGroup);
+    return group;
+  };
+
+  const create3DPuddleMesh = (radius: number): THREE.Group => {
+    const group = new THREE.Group();
+    
+    const geo = new THREE.CylinderGeometry(radius, radius, 0.4, 16);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x0e7490,
+      transparent: true,
+      opacity: 0.65,
+      roughness: 0.1,
+      metalness: 0.8,
+    });
+    const puddleMesh = new THREE.Mesh(geo, mat);
+    group.add(puddleMesh);
+
+    const ringGeo = new THREE.RingGeometry(radius - 1, radius + 1, 16);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x22d3ee, side: THREE.DoubleSide, transparent: true, opacity: 0.4 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.1;
+    group.add(ring);
+    
+    return group;
+  };
+
+  const create3DDecoyMesh = (): THREE.Group => {
+    const group = new THREE.Group();
+    const geo = new THREE.SphereGeometry(6, 12, 12);
+    const mat = new THREE.MeshStandardMaterial({ color: 0xa855f7, roughness: 0.6, metalness: 0.5 });
+    const decoyMesh = new THREE.Mesh(geo, mat);
+    decoyMesh.name = "decoyBody";
+    group.add(decoyMesh);
+
+    const ringGeo = new THREE.RingGeometry(1, 15, 24);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xd8b4fe,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.5,
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.name = "pulseRing";
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = -5.8;
+    group.add(ring);
+    
+    return group;
+  };
+
+  const renderThree = (dt: number = 0.016) => {
+    checkAndInitThree();
+    updateThreeEntities(dt);
+    if (threeRendererRef.current && threeSceneRef.current && threeCameraRef.current) {
+      threeRendererRef.current.render(threeSceneRef.current, threeCameraRef.current);
+    }
+  };
+
   // --- THREE ENGINE CORE GRAPHICS UPDATER ---
   const updateThreeEntities = (dt = 0.016) => {
     const scene = threeSceneRef.current;
