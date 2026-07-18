@@ -41,12 +41,12 @@ export interface PlayerState {
   isBurstActive: boolean;
   
   // Custom Stockpiled Item inventories
-  catnipCharges: number;
-  energyCanCharges: number;
-  empCharges: number;
+  catnipCharges?: number;
+  energyCanCharges?: number;
+  empCharges?: number;
 
   // Hyper rush duration helper
-  hyperChargeTime: number; // in seconds
+  hyperChargeTime?: number; // in seconds
   isMoving?: boolean;
 }
 

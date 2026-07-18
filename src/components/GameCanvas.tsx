@@ -11,6 +11,14 @@ import { isLocationWalkable, getRoomAt, checkLineOfSight, playScreamSound, playR
 import { Shield, Sparkles, AlertTriangle, ArrowRight, Home, RefreshCw, Volume2, VolumeX, Eye, Flame, Heart, Zap, BookOpen } from "lucide-react";
 import { SurvivalGuide } from "./SurvivalGuide";
 import { getOrGenerateCampaign, drawCampaignMapToCanvas, MAP_WIDTH, MAP_HEIGHT, NUM_WINGS } from "../mapGenerator";
+// Place this near the top of your file, right below your imports
+interface ExtendedPlayerState extends PlayerState {
+  catnipCharges?: number;
+  energyCanCharges?: number;
+  empCharges?: number;
+  hyperChargeTime?: number;
+  isMoving?: boolean;
+}
 
 const jointAnchors = {
   RUNNER: { ll: "175 420", rl: "225 420", la: "150 260", ra: "250 260", t: "200 340", h: "200 195" },
@@ -57,6 +65,156 @@ function getSvgWalkFrame(type: "RUNNER" | "MARCUS" | "FAIBE" | "TOBBY", baseSvg:
   return svg;
 }
 
+const textureCache: Record<string, THREE.CanvasTexture> = {};
+
+/**
+ * Generates a high-quality procedural texture using HTML5 Canvas
+ */
+export function createProceduralTexture(
+  baseColor: string, 
+  noiseStrength = 0.04, 
+  patternType: "noise" | "grid" | "stripe" | "brushed" | "carbon" | "concrete" = "noise", 
+  patternColor: string | null = null,
+  tileSize = 256
+): THREE.CanvasTexture {
+  if (typeof document === "undefined") {
+    return null as unknown as THREE.CanvasTexture;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = tileSize;
+  canvas.height = tileSize;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  // Fill base color
+  ctx.fillStyle = baseColor;
+  ctx.fillRect(0, 0, tileSize, tileSize);
+
+  if (patternType === "grid" && patternColor) {
+    ctx.strokeStyle = patternColor;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(0, 0, tileSize, tileSize);
+    // Draw horizontal and vertical division to make it a tile
+    ctx.beginPath();
+    ctx.moveTo(tileSize / 2, 0);
+    ctx.lineTo(tileSize / 2, tileSize);
+    ctx.moveTo(0, tileSize / 2);
+    ctx.lineTo(tileSize, tileSize / 2);
+    ctx.stroke();
+
+    // Subtle bevel shading
+    ctx.fillStyle = "rgba(255,255,255,0.03)";
+    ctx.fillRect(2, 2, tileSize / 2 - 4, tileSize / 2 - 4);
+    ctx.fillRect(tileSize / 2 + 2, 2, tileSize / 2 - 4, tileSize / 2 - 4);
+    ctx.fillRect(2, tileSize / 2 + 2, tileSize / 2 - 4, tileSize / 2 - 4);
+    ctx.fillRect(tileSize / 2 + 2, tileSize / 2 + 2, tileSize / 2 - 4, tileSize / 2 - 4);
+  } else if (patternType === "concrete") {
+    // Concrete blocks/panels
+    ctx.strokeStyle = "rgba(0,0,0,0.2)";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(0, 0, tileSize, tileSize);
+    
+    // Draw some subtle concrete circular stamp divots near corners
+    ctx.fillStyle = "rgba(0,0,0,0.15)";
+    const r = 4;
+    ctx.beginPath();
+    ctx.arc(15, 15, r, 0, Math.PI * 2);
+    ctx.arc(tileSize - 15, 15, r, 0, Math.PI * 2);
+    ctx.arc(15, tileSize - 15, r, 0, Math.PI * 2);
+    ctx.arc(tileSize - 15, tileSize - 15, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(255,255,255,0.05)";
+    ctx.beginPath();
+    ctx.arc(16, 16, r * 0.7, 0, Math.PI * 2);
+    ctx.arc(tileSize - 14, 16, r * 0.7, 0, Math.PI * 2);
+    ctx.arc(16, tileSize - 14, r * 0.7, 0, Math.PI * 2);
+    ctx.arc(tileSize - 14, tileSize - 14, r * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (patternType === "stripe" && patternColor) {
+    ctx.strokeStyle = patternColor;
+    ctx.lineWidth = 12;
+    for (let i = -tileSize; i < tileSize * 2; i += 32) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i + tileSize, tileSize);
+      ctx.stroke();
+    }
+  } else if (patternType === "brushed") {
+    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < tileSize; i += 3) {
+      if (Math.random() > 0.3) {
+        ctx.beginPath();
+        ctx.moveTo(0, i);
+        ctx.lineTo(tileSize, i);
+        ctx.stroke();
+      }
+    }
+    ctx.strokeStyle = "rgba(0,0,0,0.08)";
+    for (let i = 0; i < tileSize; i += 4) {
+      if (Math.random() > 0.4) {
+        ctx.beginPath();
+        ctx.moveTo(0, i);
+        ctx.lineTo(tileSize, i);
+        ctx.stroke();
+      }
+    }
+  } else if (patternType === "carbon") {
+    // Futuristic carbon fiber weave pattern
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    for (let x = 0; x < tileSize; x += 8) {
+      for (let y = 0; y < tileSize; y += 8) {
+        if ((x + y) % 16 === 0) {
+          ctx.fillRect(x, y, 4, 4);
+          ctx.fillRect(x + 4, y + 4, 4, 4);
+        }
+      }
+    }
+    ctx.fillStyle = "rgba(255,255,255,0.04)";
+    for (let x = 0; x < tileSize; x += 8) {
+      for (let y = 0; y < tileSize; y += 8) {
+        if ((x + y) % 16 !== 0) {
+          ctx.fillRect(x, y, 4, 4);
+        }
+      }
+    }
+  }
+
+  // Add noise
+  if (noiseStrength > 0) {
+    const imgData = ctx.getImageData(0, 0, tileSize, tileSize);
+    const data = imgData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const noise = (Math.random() - 0.5) * noiseStrength * 255;
+      data[i] = Math.min(255, Math.max(0, data[i] + noise));
+      data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + noise));
+      data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + noise));
+    }
+    ctx.putImageData(imgData, 0, 0);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+export function getProceduralTexture(
+  baseColor: string, 
+  noiseStrength = 0.04, 
+  patternType: "noise" | "grid" | "stripe" | "brushed" | "carbon" | "concrete" = "noise", 
+  patternColor: string | null = null,
+  tileSize = 256
+): THREE.CanvasTexture {
+  const key = `${baseColor}_${noiseStrength}_${patternType}_${patternColor}_${tileSize}`;
+  if (!textureCache[key]) {
+    textureCache[key] = createProceduralTexture(baseColor, noiseStrength, patternType, patternColor, tileSize);
+  }
+  return textureCache[key];
+}
+
 interface GameCanvasProps {
   characterClass: CharacterClass;
   currentFloor: number;
@@ -87,6 +245,7 @@ export function GameCanvas({
   const threeCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const playerMeshRef = useRef<THREE.Group | null>(null);
   const playerLightRef = useRef<THREE.SpotLight | null>(null);
+  const dirLightRef = useRef<THREE.DirectionalLight | null>(null);
   const obstaclesGroupRef = useRef<THREE.Group | null>(null);
   const tobbysGroupRef = useRef<THREE.Group | null>(null);
   const itemsGroupRef = useRef<THREE.Group | null>(null);
@@ -124,9 +283,9 @@ export function GameCanvas({
   const keysPressedRef = useRef<{ [key: string]: boolean }>({});
 
   // Game Engine mutable values (in ref to guarantee 60fps independent of React renders)
-  const playerRef = useRef<PlayerState>({
-    classType: characterClass,
-    x: 625, // Start inside Staircase A
+const playerRef = useRef<ExtendedPlayerState>({
+  classType: characterClass,
+  x: 625,
     y: 95,
     hp: characterClass === CharacterClass.MARCUS ? 30 : characterClass === CharacterClass.RUNNER ? 20 : 15,
     maxHp: characterClass === CharacterClass.MARCUS ? 30 : characterClass === CharacterClass.RUNNER ? 20 : 15,
@@ -195,7 +354,22 @@ export function GameCanvas({
     runner_walk: HTMLImageElement[];
     marcus_walk: HTMLImageElement[];
     faibe_walk: HTMLImageElement[];
-  } | null>(null);
+  }>({
+    map: (typeof document !== "undefined" ? (() => {
+      const c = document.createElement("canvas");
+      c.width = 4500;
+      c.height = 1000;
+      return c;
+    })() : null) as unknown as HTMLImageElement,
+    tobby: (typeof Image !== "undefined" ? new Image() : null) as unknown as HTMLImageElement,
+    runner: (typeof Image !== "undefined" ? new Image() : null) as unknown as HTMLImageElement,
+    marcus: (typeof Image !== "undefined" ? new Image() : null) as unknown as HTMLImageElement,
+    faibe: (typeof Image !== "undefined" ? new Image() : null) as unknown as HTMLImageElement,
+    tobby_walk: [],
+    runner_walk: [],
+    marcus_walk: [],
+    faibe_walk: [],
+  });
 
   const initializeLevel = () => {
     // 1. Get or generate the consistent procedural campaign
@@ -228,14 +402,22 @@ export function GameCanvas({
       if (currentFloor === 5) {
         let attempts = 0;
         let found = false;
-        const validRooms = floorMap.rooms.filter(r => r.id.startsWith("C_W0_")); // Start in a Wing 0 classroom
+        const validRooms = floorMap.rooms.filter(r => r.id.startsWith("C_W0_"));
         while (attempts < 200 && !found) {
           const room = validRooms[Math.floor(Math.random() * validRooms.length)];
-          const rx = room.minX + 25 + Math.random() * (room.maxX - room.minX - 50);
-          const ry = room.minY + 25 + Math.random() * (room.maxY - room.minY - 50);
-          if (isLocationWalkable(rx, ry, 14)) {
-            px = rx;
-            py = ry;
+
+          if (room) {
+            const rx = room.minX + 25 + Math.random() * (room.maxX - room.minX - 50);
+            const ry = room.minY + 25 + Math.random() * (room.maxY - room.minY - 50);
+            if (isLocationWalkable(rx, ry, 14)) {
+              px = rx;
+              py = ry;
+              found = true;
+            }
+          } else {
+            // Safe default fallback spawn coordinates if the search yields zero rooms
+            px = floorMap.spawnX;
+            py = floorMap.spawnY;
             found = true;
           }
           attempts++;
@@ -470,26 +652,63 @@ export function GameCanvas({
     // Synchronize Three.js scene structures dynamically
     setTimeout(() => {
       if (threeSceneRef.current) {
-        // Re-draw/Update Three.js floor mesh CanvasTexture to the new floor's blueprint!
-        const floorMesh = threeSceneRef.current.getObjectByName("floorMesh") as THREE.Mesh | null;
-        if (floorMesh && floorMesh.material) {
-          const texCanvas = document.createElement("canvas");
-          texCanvas.width = 4500;
-          texCanvas.height = 1000;
-          const tCtx = texCanvas.getContext("2d");
-          if (tCtx && cache && cache.map) {
-            tCtx.fillStyle = "#020617";
-            tCtx.fillRect(0, 0, 4500, 1000);
-            tCtx.drawImage(cache.map, 0, 0, 4500, 1000);
-          }
-          const floorTex = new THREE.CanvasTexture(texCanvas);
-          const mat = floorMesh.material as THREE.MeshStandardMaterial;
-          if (mat.map) {
-            mat.map.dispose();
-          }
-          mat.map = floorTex;
-          mat.needsUpdate = true;
+        // Re-draw/Update Three.js floor mesh CanvasTexture and dynamic room floors!
+        let roomFloorsGroup = threeSceneRef.current.getObjectByName("roomFloorsGroup") as THREE.Group | null;
+        if (roomFloorsGroup) {
+          threeSceneRef.current.remove(roomFloorsGroup);
         }
+        roomFloorsGroup = new THREE.Group();
+        roomFloorsGroup.name = "roomFloorsGroup";
+        threeSceneRef.current.add(roomFloorsGroup);
+
+        const campaign = getOrGenerateCampaign();
+        const floorMap = campaign.floors[currentFloor];
+        floorMap.rooms.forEach((room) => {
+          const rw = room.maxX - room.minX;
+          const rh = room.maxY - room.minY;
+          const rx = room.minX + rw / 2;
+          const rz = room.minY + rh / 2;
+
+          let baseColor = "#0f172a";
+          let pattern: "noise" | "grid" | "stripe" | "brushed" | "carbon" | "concrete" = "grid";
+          let patternColor = "rgba(71,85,105,0.15)";
+
+          if (room.id.startsWith("C_W")) {
+            baseColor = "#0b0f19";
+            patternColor = "rgba(56, 189, 248, 0.12)";
+          } else if (room.id.startsWith("Office") || room.id.includes("Storage") || room.id.includes("Breakroom")) {
+            baseColor = "#091424";
+            patternColor = "rgba(129, 140, 248, 0.12)";
+          } else if (room.id.startsWith("Stair")) {
+            baseColor = "#1f140d";
+            pattern = "stripe";
+            patternColor = "rgba(245, 158, 11, 0.12)";
+          } else if (room.id.startsWith("Toilets")) {
+            baseColor = "#180f24";
+            patternColor = "rgba(168, 85, 247, 0.12)";
+          } else if (room.id.startsWith("Passage")) {
+            baseColor = "#050a14";
+            patternColor = "rgba(56, 189, 248, 0.08)";
+          }
+
+          const roomTex = getProceduralTexture(baseColor, 0.03, pattern, patternColor);
+          const clonedTex = roomTex.clone();
+          clonedTex.repeat.set(rw / 128, rh / 128);
+          clonedTex.needsUpdate = true;
+
+          const roomMat = new THREE.MeshStandardMaterial({
+            map: clonedTex,
+            roughness: 0.25,
+            metalness: 0.1,
+          });
+
+          const roomGeo = new THREE.PlaneGeometry(rw, rh);
+          const roomMesh = new THREE.Mesh(roomGeo, roomMat);
+          roomMesh.rotation.x = -Math.PI / 2;
+          roomMesh.position.set(rx, 0.15, rz);
+          roomMesh.receiveShadow = true;
+          roomFloorsGroup!.add(roomMesh);
+        });
 
         rebuildObstacles3D();
         buildRealWalls3D();
@@ -565,66 +784,64 @@ export function GameCanvas({
     const faibeImg = new Image();
     faibeImg.src = getSvgDataUrl(FAIBE_SVG);
 
-    const cache = {
-      map: mapImg,
-      tobby: tobbyImg,
-      runner: runnerImg,
-      marcus: marcusImg,
-      faibe: faibeImg,
-      tobby_walk: t_walk,
-      runner_walk: r_walk,
-      marcus_walk: m_walk,
-      faibe_walk: f_walk,
-    };
-
-    imagesCachedRef.current = cache;
+    const cache = imagesCachedRef.current;
+    if (cache) {
+      cache.tobby = tobbyImg;
+      cache.runner = runnerImg;
+      cache.marcus = marcusImg;
+      cache.faibe = faibeImg;
+      cache.tobby_walk = t_walk;
+      cache.runner_walk = r_walk;
+      cache.marcus_walk = m_walk;
+      cache.faibe_walk = f_walk;
+    }
   }, []);
 
   // 3. Handle Keyboard input listeners
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const key = e.key.toLowerCase();
-      keysPressedRef.current[key] = true;
-      keysPressedRef.current[e.key] = true; // handle specific case for Space or Arrow Keys
+useEffect(() => {
+  const handleKeyDown = (e: KeyboardEvent) => {
+    // Prevent gameplay actions if the survival guide modal is active
+    if (isGuideOpen) return;
 
-      // Direct Spacebar action to trigger ability
-      if (e.key === " ") {
-        e.preventDefault();
-        triggerSpecialAbility();
-      }
+    const key = e.key.toLowerCase();
+    keysPressedRef.current[key] = true;
+    keysPressedRef.current[e.key] = true;
 
-      // Numerical utility item usage
-      if (key === "1") {
-        e.preventDefault();
-        triggerItemUse(1);
-      } else if (key === "2") {
-        e.preventDefault();
-        triggerItemUse(2);
-      } else if (key === "3") {
-        e.preventDefault();
-        triggerItemUse(3);
-      }
+    if (e.key === " ") {
+      e.preventDefault();
+      triggerSpecialAbility();
+    }
 
-      // Punch/Hit key binding
-      if (key === "e" || key === "f") {
-        e.preventDefault();
-        triggerMeleeStrike();
-      }
-    };
+    if (key === "1") {
+      e.preventDefault();
+      triggerItemUse(1);
+    } else if (key === "2") {
+      e.preventDefault();
+      triggerItemUse(2);
+    } else if (key === "3") {
+      e.preventDefault();
+      triggerItemUse(3);
+    }
 
-    const handleKeyUp = (e: KeyboardEvent) => {
-      keysPressedRef.current[e.key.toLowerCase()] = false;
-      keysPressedRef.current[e.key] = false;
-    };
+    if (key === "e" || key === "f") {
+      e.preventDefault();
+      triggerMeleeStrike();
+    }
+  };
 
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
+  const handleKeyUp = (e: KeyboardEvent) => {
+    keysPressedRef.current[e.key.toLowerCase()] = false;
+    keysPressedRef.current[e.key] = false;
+  };
 
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
-    };
-  }, []);
+  window.addEventListener("keydown", handleKeyDown);
+  window.addEventListener("keyup", handleKeyUp);
+
+  return () => {
+    window.removeEventListener("keydown", handleKeyDown);
+    window.removeEventListener("keyup", handleKeyUp);
+  };
+}, [characterClass, isGuideOpen]); // Re-bind listener on configuration changes
 
   // 3b. Mouse and Touch pointer control listeners
   useEffect(() => {
@@ -648,8 +865,8 @@ export function GameCanvas({
 
         return { x: targetPoint.x, y: targetPoint.z };
       } else {
-        // Translate HTML display coordinates directly into our 900x1000 resolution
-        const x = ((clientX - rect.left) / rect.width) * 900;
+        // Translate HTML display coordinates directly into our 4500x1000 resolution
+        const x = ((clientX - rect.left) / rect.width) * 4500;
         const y = ((clientY - rect.top) / rect.height) * 1000;
         return { x, y };
       }
@@ -962,7 +1179,16 @@ export function GameCanvas({
       }
     };
   }, [muted, is3DMode]);
+  // Change these const declarations into hoisted function declarations
+  function xBoundaryCheck(nextX: number, obs: GameObstacle): boolean {
+    const radius = 11.5;
+    return nextX <= obs.x + obs.width + radius;
+  }
 
+  function yBoundaryCheck(nextY: number, obs: GameObstacle): boolean {
+    const radius = 11.5;
+    return nextY <= obs.y + obs.height + radius;
+  }
   const checkObstacleBreaking = (nextX: number, nextY: number, radius: number): boolean => {
     const p = playerRef.current;
     
@@ -1180,16 +1406,7 @@ export function GameCanvas({
     return false;
   };
 
-  // Simple boundary checks for checkObstacleBreaking
-  const xBoundaryCheck = (nextX: number, obs: GameObstacle): boolean => {
-    const radius = 11.5;
-    return nextX <= obs.x + obs.width + radius;
-  };
 
-  const yBoundaryCheck = (nextY: number, obs: GameObstacle): boolean => {
-    const radius = 11.5;
-    return nextY <= obs.y + obs.height + radius;
-  };
 
   // Core physics logic
   const updatePhysics = (dt: number) => {
@@ -1948,7 +2165,7 @@ export function GameCanvas({
 
     // --- Hips ---
     const hipsGeo = new THREE.BoxGeometry(11, 4, 7);
-    const hipsMat = new THREE.MeshStandardMaterial({ color: pantsColor, roughness: 0.7 });
+    const hipsMat = new THREE.MeshStandardMaterial({ map: getProceduralTexture(characterClass === CharacterClass.MARCUS ? "#334155" : (characterClass === CharacterClass.FAIBE ? "#475569" : "#1e293b"), 0.04, "noise"), roughness: 0.7 });
     const hipsMesh = new THREE.Mesh(hipsGeo, hipsMat);
     hipsMesh.position.y = 10;
     group.add(hipsMesh);
@@ -1958,8 +2175,11 @@ export function GameCanvas({
     const torsoGeo = isHeavy 
       ? new THREE.BoxGeometry(15, torsoHeight, 10) 
       : new THREE.CylinderGeometry(5.5, 6.5, torsoHeight, 12);
+    
+    const torsoColorStr = torsoColor === 0x3b82f6 ? "#3b82f6" : (torsoColor === 0x15803d ? "#15803d" : "#be123c");
+    const torsoTex = getProceduralTexture(torsoColorStr, 0.04, "carbon");
     const torsoMat = new THREE.MeshStandardMaterial({
-      color: torsoColor,
+      map: torsoTex,
       roughness: 0.3,
       metalness: 0.4,
     });
@@ -2111,6 +2331,16 @@ export function GameCanvas({
       halo.position.set(0, 5, 0); // local offset
       headGroup.add(halo);
     }
+
+    // Traverse and automatically enable shadow properties for all non-glowing child meshes
+    group.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        if (!(child.material instanceof THREE.MeshBasicMaterial)) {
+          child.castShadow = true;
+        }
+        child.receiveShadow = true;
+      }
+    });
 
     return group;
   };
@@ -2285,6 +2515,16 @@ export function GameCanvas({
 
     group.add(rightArmGroup);
 
+    // Traverse and automatically enable shadow properties for all non-glowing Tobby meshes
+    group.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        if (!(child.material instanceof THREE.MeshBasicMaterial)) {
+          child.castShadow = true;
+        }
+        child.receiveShadow = true;
+      }
+    });
+
     return group;
   };
 
@@ -2307,6 +2547,7 @@ export function GameCanvas({
     });
     renderer.setSize(canvas.width, canvas.height);
     renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Enable soft filtered shadows
     threeRendererRef.current = renderer;
 
     const ambientLight = new THREE.AmbientLight(0x0a1128, 0.75);
@@ -2315,31 +2556,81 @@ export function GameCanvas({
     const dirLight = new THREE.DirectionalLight(0x38bdf8, 0.45);
     dirLight.position.set(450, 500, 500);
     scene.add(dirLight);
+    dirLightRef.current = dirLight; // Store in ref to update position dynamically
 
     const floorGeo = new THREE.PlaneGeometry(4500, 1000);
-    const cache = imagesCachedRef.current;
-    if (cache && cache.map) {
-      const texCanvas = document.createElement("canvas");
-      texCanvas.width = 4500;
-      texCanvas.height = 1000;
-      const tCtx = texCanvas.getContext("2d");
-      if (tCtx) {
-        tCtx.fillStyle = "#020617";
-        tCtx.fillRect(0, 0, 4500, 1000);
-        tCtx.drawImage(cache.map, 0, 0, 4500, 1000);
+    // General hallway/corridor floor repeating tile texture
+    const corridorTex = getProceduralTexture("#0f172a", 0.03, "grid", "rgba(71,85,105,0.15)");
+    const clonedCorridorTex = corridorTex.clone();
+    clonedCorridorTex.repeat.set(45, 10);
+    clonedCorridorTex.needsUpdate = true;
+    
+    const floorMat = new THREE.MeshStandardMaterial({
+      map: clonedCorridorTex,
+      roughness: 0.22, // High-gloss polished dielectric floor look
+      metalness: 0.1,  // Non-metallic polished linoleum floor
+    });
+    const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+    floorMesh.name = "floorMesh"; // Give it a name so we can retrieve and update its texture when changing floors!
+    floorMesh.rotation.x = -Math.PI / 2;
+    floorMesh.position.set(2250, 0, 500);
+    floorMesh.receiveShadow = true;
+    scene.add(floorMesh);
+
+    // Initialize room floors group
+    let roomFloorsGroup = new THREE.Group();
+    roomFloorsGroup.name = "roomFloorsGroup";
+    scene.add(roomFloorsGroup);
+
+    // Rebuild the dynamic room floors!
+    const campaign = getOrGenerateCampaign();
+    const floorMap = campaign.floors[currentFloor];
+    floorMap.rooms.forEach((room) => {
+      const rw = room.maxX - room.minX;
+      const rh = room.maxY - room.minY;
+      const rx = room.minX + rw / 2;
+      const rz = room.minY + rh / 2;
+
+      let baseColor = "#0f172a";
+      let pattern: "noise" | "grid" | "stripe" | "brushed" | "carbon" | "concrete" = "grid";
+      let patternColor = "rgba(71,85,105,0.15)";
+
+      if (room.id.startsWith("C_W")) {
+        baseColor = "#0b0f19";
+        patternColor = "rgba(56, 189, 248, 0.12)";
+      } else if (room.id.startsWith("Office") || room.id.includes("Storage") || room.id.includes("Breakroom")) {
+        baseColor = "#091424";
+        patternColor = "rgba(129, 140, 248, 0.12)";
+      } else if (room.id.startsWith("Stair")) {
+        baseColor = "#1f140d";
+        pattern = "stripe";
+        patternColor = "rgba(245, 158, 11, 0.12)";
+      } else if (room.id.startsWith("Toilets")) {
+        baseColor = "#180f24";
+        patternColor = "rgba(168, 85, 247, 0.12)";
+      } else if (room.id.startsWith("Passage")) {
+        baseColor = "#050a14";
+        patternColor = "rgba(56, 189, 248, 0.08)";
       }
-      const floorTex = new THREE.CanvasTexture(texCanvas);
-      const floorMat = new THREE.MeshStandardMaterial({
-        map: floorTex,
-        roughness: 0.16, // Glossy polished floor reflecting ambient light
-        metalness: 0.45,
+
+      const roomTex = getProceduralTexture(baseColor, 0.03, pattern, patternColor);
+      const clonedTex = roomTex.clone();
+      clonedTex.repeat.set(rw / 128, rh / 128);
+      clonedTex.needsUpdate = true;
+
+      const roomMat = new THREE.MeshStandardMaterial({
+        map: clonedTex,
+        roughness: 0.25,
+        metalness: 0.1,
       });
-      const floorMesh = new THREE.Mesh(floorGeo, floorMat);
-      floorMesh.name = "floorMesh"; // Give it a name so we can retrieve and update its texture when changing floors!
-      floorMesh.rotation.x = -Math.PI / 2;
-      floorMesh.position.set(2250, 0, 500);
-      scene.add(floorMesh);
-    }
+
+      const roomGeo = new THREE.PlaneGeometry(rw, rh);
+      const roomMesh = new THREE.Mesh(roomGeo, roomMat);
+      roomMesh.rotation.x = -Math.PI / 2;
+      roomMesh.position.set(rx, 0.15, rz); // Slightly above floor mesh to avoid z-fighting
+      roomMesh.receiveShadow = true;
+      roomFloorsGroup.add(roomMesh);
+    });
 
     const obstaclesGroup = new THREE.Group();
     scene.add(obstaclesGroup);
@@ -2379,7 +2670,45 @@ export function GameCanvas({
     playerGroup.add(lightTarget);
     flashlight.target = lightTarget;
   };
+useEffect(() => {
+  return () => {
+    // 1. Terminate the animation tick
+    if (animationFrameIdRef.current) {
+      cancelAnimationFrame(animationFrameIdRef.current);
+    }
 
+    // 2. Dispose of the WebGL Renderer
+    if (threeRendererRef.current) {
+      threeRendererRef.current.dispose();
+      threeRendererRef.current = null;
+    }
+
+    // 3. Traverse and clean all materials/geometries in the scene
+    if (threeSceneRef.current) {
+      threeSceneRef.current.traverse((object) => {
+        if (object instanceof THREE.Mesh) {
+          if (object.geometry) {
+            object.geometry.dispose();
+          }
+          if (object.material) {
+            if (Array.isArray(object.material)) {
+              object.material.forEach((mat) => mat.dispose());
+            } else {
+              object.material.dispose();
+            }
+          }
+        }
+      });
+      threeSceneRef.current = null;
+    }
+
+    // 4. Dispose of textures from procedural cache
+    for (const key in textureCache) {
+      textureCache[key].dispose();
+      delete textureCache[key];
+    }
+  };
+}, []);
   const buildRealWalls3D = () => {
     const scene = threeSceneRef.current;
     if (!scene) return;
@@ -2396,11 +2725,12 @@ export function GameCanvas({
     const wallHeight = 42; 
     const wallThickness = 12;
 
-    // Premium high-gloss reflective slate wall material
+    // Premium concrete textured slate wall material
+    const wallTex = getProceduralTexture("#111827", 0.05, "concrete", "rgba(56,189,248,0.1)");
     const wallMaterial = new THREE.MeshStandardMaterial({
-      color: 0x0c1322,  // Rich deep slate navy
-      roughness: 0.08,  // Highly reflective glossy finish
-      metalness: 0.85,  // Metallic reflection accents
+      map: wallTex,
+      roughness: 0.45,  // Beautiful soft textured concrete finish
+      metalness: 0.1,   
     });
 
     // Bright cyan fluorescent neon strip trim running along the top of walls
@@ -2427,10 +2757,10 @@ export function GameCanvas({
       wallMesh.receiveShadow = true;
       wallsGroup!.add(wallMesh);
 
-      // Neon glowing horizontal visual trim line
-      const trimGeo = new THREE.BoxGeometry(length, 1.8, wallThickness + 0.6);
+      // Neon glowing horizontal visual trim line (thin centered conduit strip)
+      const trimGeo = new THREE.BoxGeometry(length, 1.2, 1.8);
       const trimMesh = new THREE.Mesh(trimGeo, trimMaterial);
-      trimMesh.position.set(0, wallHeight / 2 + 0.9, 0);
+      trimMesh.position.set(0, wallHeight / 2 + 0.6, 0);
       wallMesh.add(trimMesh);
     };
 
@@ -2597,7 +2927,8 @@ export function GameCanvas({
     if (name.includes("Chair") || name.includes("Stool")) {
       // Seat cushion
       const seatGeo = new THREE.BoxGeometry(w, 1.2, h);
-      const seatMat = new THREE.MeshStandardMaterial({ color: 0x1e3a8a, roughness: 0.8 }); // Blue plastic/fabric
+      const seatTex = getProceduralTexture("#1e3a8a", 0.05, "noise");
+      const seatMat = new THREE.MeshStandardMaterial({ map: seatTex, roughness: 0.8 }); // Blue plastic/fabric
       const seat = new THREE.Mesh(seatGeo, seatMat);
       seat.position.y = 7;
       group.add(seat);
@@ -2605,15 +2936,15 @@ export function GameCanvas({
       // Backrest (if not a stool)
       if (!name.includes("Stool")) {
         const backGeo = new THREE.BoxGeometry(w, 8, 1.2);
-        const backMat = new THREE.MeshStandardMaterial({ color: 0x1e3a8a, roughness: 0.8 });
-        const back = new THREE.Mesh(backGeo, backMat);
+        const back = new THREE.Mesh(backGeo, seatMat);
         back.position.set(0, 11.6, -h / 2 + 0.6);
         group.add(back);
       }
 
       // 4 metal legs
       const legGeo = new THREE.CylinderGeometry(0.5, 0.5, 6.4, 6);
-      const legMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.9, roughness: 0.1 });
+      const legTex = getProceduralTexture("#94a3b8", 0.02, "brushed");
+      const legMat = new THREE.MeshStandardMaterial({ map: legTex, metalness: 0.9, roughness: 0.1 });
       const offsets = [
         [-w / 2 + 1, -h / 2 + 1],
         [w / 2 - 1, -h / 2 + 1],
@@ -2631,20 +2962,23 @@ export function GameCanvas({
     else if (name.includes("Plant") || name.includes("Pot")) {
       // Pot at bottom
       const potGeo = new THREE.CylinderGeometry(w / 2.2, w / 2.8, 6, 8);
-      const potMat = new THREE.MeshStandardMaterial({ color: 0xca8a04, roughness: 0.9 }); // Terracotta
+      const potTex = getProceduralTexture("#ca8a04", 0.05, "noise");
+      const potMat = new THREE.MeshStandardMaterial({ map: potTex, roughness: 0.9 }); // Terracotta
       const pot = new THREE.Mesh(potGeo, potMat);
       pot.position.y = 3;
       group.add(pot);
 
       // Stem
       const stemGeo = new THREE.CylinderGeometry(0.6, 0.6, 8, 6);
-      const stemMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.9 });
+      const stemTex = getProceduralTexture("#78350f", 0.05, "noise");
+      const stemMat = new THREE.MeshStandardMaterial({ map: stemTex, roughness: 0.9 });
       const stem = new THREE.Mesh(stemGeo, stemMat);
       stem.position.y = 10;
       group.add(stem);
 
       // 3 Spheres of green foliage
-      const leafMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.9 });
+      const leafTex = getProceduralTexture("#15803d", 0.06, "noise");
+      const leafMat = new THREE.MeshStandardMaterial({ map: leafTex, roughness: 0.9 });
       
       const fol1 = new THREE.Mesh(new THREE.SphereGeometry(w / 1.8, 8, 8), leafMat);
       fol1.position.y = 13;
@@ -2663,7 +2997,8 @@ export function GameCanvas({
     else if (name.includes("Locker")) {
       const lockerHeight = 26;
       const lockerGeo = new THREE.BoxGeometry(w, lockerHeight, h);
-      const lockerMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8, roughness: 0.3 }); // Navy slate grey metal
+      const lockerTex = getProceduralTexture("#475569", 0.04, "brushed");
+      const lockerMat = new THREE.MeshStandardMaterial({ map: lockerTex, metalness: 0.8, roughness: 0.3 }); // Navy slate grey metal
       const locker = new THREE.Mesh(lockerGeo, lockerMat);
       locker.position.y = lockerHeight / 2;
       group.add(locker);
@@ -2697,7 +3032,8 @@ export function GameCanvas({
       const vendHeight = 28;
       // Main frame
       const frameGeo = new THREE.BoxGeometry(w, vendHeight, h);
-      const frameMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.3 }); // Retro Red
+      const frameTex = getProceduralTexture("#dc2626", 0.04, "brushed");
+      const frameMat = new THREE.MeshStandardMaterial({ map: frameTex, roughness: 0.3 }); // Retro Red
       const frame = new THREE.Mesh(frameGeo, frameMat);
       frame.position.y = vendHeight / 2;
       group.add(frame);
@@ -2741,28 +3077,29 @@ export function GameCanvas({
     else if (name.includes("Sofa") || name.includes("Couch") || name.includes("Cushion")) {
       // Base cushion platform
       const baseGeo = new THREE.BoxGeometry(w, 4, h);
-      const baseMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
+      const baseTex = getProceduralTexture("#1e293b", 0.05, "noise");
+      const baseMat = new THREE.MeshStandardMaterial({ map: baseTex, roughness: 0.9 });
       const base = new THREE.Mesh(baseGeo, baseMat);
       base.position.y = 2;
       group.add(base);
 
       // Plush seat cushion
       const plushGeo = new THREE.BoxGeometry(w - 2, 3, h - 2);
-      const plushMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.7 }); // Velvet Red
+      const plushTex = getProceduralTexture("#b91c1c", 0.06, "noise");
+      const plushMat = new THREE.MeshStandardMaterial({ map: plushTex, roughness: 0.7 }); // Velvet Red
       const plush = new THREE.Mesh(plushGeo, plushMat);
       plush.position.set(0, 5, 0.5);
       group.add(plush);
 
       // Backrest
       const backGeo = new THREE.BoxGeometry(w, 10, 3);
-      const backMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.7 });
-      const back = new THREE.Mesh(backGeo, backMat);
+      const back = new THREE.Mesh(backGeo, plushMat);
       back.position.set(0, 8.5, -h / 2 + 1.5);
       group.add(back);
 
       // Armrests (left and right)
       const armGeo = new THREE.BoxGeometry(3, 8, h);
-      const armMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
+      const armMat = baseMat;
       const leftArm = new THREE.Mesh(armGeo, armMat);
       leftArm.position.set(-w / 2 + 1.5, 5.5, 0);
       group.add(leftArm);
@@ -2776,7 +3113,8 @@ export function GameCanvas({
     else if (name.includes("Cabinet") || name.includes("Shelf") || name.includes("Cupboard") || name.includes("Drawer")) {
       const cabHeight = 24;
       const cabGeo = new THREE.BoxGeometry(w, cabHeight, h);
-      const cabMat = new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.8 }); // Rich wood grain tone
+      const cabTex = getProceduralTexture("#78350f", 0.05, "stripe");
+      const cabMat = new THREE.MeshStandardMaterial({ map: cabTex, roughness: 0.8 }); // Rich wood grain tone
       const cab = new THREE.Mesh(cabGeo, cabMat);
       cab.position.y = cabHeight / 2;
       group.add(cab);
@@ -2804,8 +3142,10 @@ export function GameCanvas({
     // --- 7. CUBICLE DESK MODEL ---
     else if (name.includes("Cubicle")) {
       const wallHeight = 16;
-      const wallMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.7 }); // Office grey partitions
-      const woodMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.8 }); // Oak desk surface
+      const wallTex = getProceduralTexture("#475569", 0.04, "concrete");
+      const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.7 }); // Office grey partitions
+      const woodTex = getProceduralTexture("#d97706", 0.05, "stripe");
+      const woodMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.8 }); // Oak desk surface
 
       // Left panel
       const leftWall = new THREE.Mesh(new THREE.BoxGeometry(1.6, wallHeight, h), wallMat);
@@ -2853,14 +3193,14 @@ export function GameCanvas({
       const sinkHeight = 12;
       // Main counter base
       const counterGeo = new THREE.BoxGeometry(w, sinkHeight, h);
-      const counterMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.4 }); // Grey-white ceramic look
+      const counterMat = new THREE.MeshStandardMaterial({ map: getProceduralTexture("#e2e8f0", 0.03, "noise"), roughness: 0.4 }); // Grey-white ceramic look
       const counter = new THREE.Mesh(counterGeo, counterMat);
       counter.position.y = sinkHeight / 2;
       group.add(counter);
 
       // Steel basins (we can put 2 basins if wide, or 1 if narrow)
       const numBasins = w > 30 ? 2 : 1;
-      const steelMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.9, roughness: 0.2 });
+      const steelMat = new THREE.MeshStandardMaterial({ map: getProceduralTexture("#cbd5e1", 0.02, "brushed"), metalness: 0.9, roughness: 0.2 });
       for (let i = 0; i < numBasins; i++) {
         const offsetPct = numBasins === 2 ? (i === 0 ? -0.25 : 0.25) : 0;
         const dx = w * offsetPct;
@@ -2889,7 +3229,7 @@ export function GameCanvas({
       // Panel hovering above ground with chrome feet
       const panelHeight = 20;
       const panelGeo = new THREE.BoxGeometry(w, panelHeight, h);
-      const panelMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.6 }); // Privacy partition
+      const panelMat = new THREE.MeshStandardMaterial({ map: getProceduralTexture("#475569", 0.04, "brushed"), roughness: 0.6 }); // Privacy partition
       const panel = new THREE.Mesh(panelGeo, panelMat);
       panel.position.y = 14; // Hovering with 4 units of ground clearance
       group.add(panel);
@@ -2909,7 +3249,7 @@ export function GameCanvas({
     else if (name.includes("Bench")) {
       // Wood plank seat
       const seatGeo = new THREE.BoxGeometry(w, 1.2, h);
-      const seatMat = new THREE.MeshStandardMaterial({ color: 0x7c2d12, roughness: 0.7 }); // Mahogany wood
+      const seatMat = new THREE.MeshStandardMaterial({ map: getProceduralTexture("#7c2d12", 0.05, "stripe"), roughness: 0.7 }); // Mahogany wood
       const seat = new THREE.Mesh(seatGeo, seatMat);
       seat.position.y = 6;
       group.add(seat);
@@ -2936,7 +3276,7 @@ export function GameCanvas({
       // Stack of rotated crates and cross wood planks
       // Crate 1
       const crate1Geo = new THREE.BoxGeometry(10, 10, 10);
-      const crate1Mat = new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.9 }); // Dark pine
+      const crate1Mat = new THREE.MeshStandardMaterial({ map: getProceduralTexture("#b45309", 0.05, "stripe"), roughness: 0.9 }); // Dark pine
       const crate1 = new THREE.Mesh(crate1Geo, crate1Mat);
       crate1.position.set(-w / 4, 5, 0);
       crate1.rotation.set(0.1, 0.25, -0.05);
@@ -2945,7 +3285,7 @@ export function GameCanvas({
       // Crate 2 (if wide)
       if (w > 15) {
         const crate2Geo = new THREE.BoxGeometry(8, 8, 8);
-        const crate2Mat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.95 }); // Light pine
+        const crate2Mat = new THREE.MeshStandardMaterial({ map: getProceduralTexture("#d97706", 0.05, "stripe"), roughness: 0.95 }); // Light pine
         const crate2 = new THREE.Mesh(crate2Geo, crate2Mat);
         crate2.position.set(w / 4, 4, 1);
         crate2.rotation.set(-0.15, -0.3, 0.1);
@@ -2954,7 +3294,7 @@ export function GameCanvas({
 
       // Crossed wood barrier board
       const boardGeo = new THREE.BoxGeometry(w + 2, 2.5, 1);
-      const boardMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.9 });
+      const boardMat = new THREE.MeshStandardMaterial({ map: getProceduralTexture("#78350f", 0.06, "stripe"), roughness: 0.9 });
       const board = new THREE.Mesh(boardGeo, boardMat);
       board.position.set(0, 8.5, 4.5);
       board.rotation.z = -0.12;
@@ -2973,14 +3313,16 @@ export function GameCanvas({
     else if (name.includes("Desk") || name.includes("Table") || name.includes("Study")) {
       // Table top surface
       const topGeo = new THREE.BoxGeometry(w, 1.6, h);
-      const topMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.75 }); // Classroom wood tabletop
+      const topTex = getProceduralTexture("#d97706", 0.05, "stripe");
+      const topMat = new THREE.MeshStandardMaterial({ map: topTex, roughness: 0.75 }); // Classroom wood tabletop
       const top = new THREE.Mesh(topGeo, topMat);
       top.position.y = 13;
       group.add(top);
 
       // Support metal panels or legs depending on width
       const legGeo = new THREE.BoxGeometry(1.2, 12.2, 1.2);
-      const legMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8, roughness: 0.3 }); // Sleek metal frame
+      const legTex = getProceduralTexture("#475569", 0.03, "brushed");
+      const legMat = new THREE.MeshStandardMaterial({ map: legTex, metalness: 0.8, roughness: 0.3 }); // Sleek metal frame
       const offsets = [
         [-w / 2 + 1, -h / 2 + 1],
         [w / 2 - 1, -h / 2 + 1],
@@ -3005,7 +3347,8 @@ export function GameCanvas({
     // --- 13. CHEST / STORAGE BOX MODEL ---
     else if (name.includes("Box") || name.includes("Chest") || name.includes("Trunk")) {
       const boxGeo = new THREE.BoxGeometry(w, 12, h);
-      const boxMat = new THREE.MeshStandardMaterial({ color: 0x7c2d12, roughness: 0.95 }); // Heavy wood chest
+      const boxTex = getProceduralTexture("#7c2d12", 0.05, "stripe");
+      const boxMat = new THREE.MeshStandardMaterial({ map: boxTex, roughness: 0.95 }); // Heavy wood chest
       const box = new THREE.Mesh(boxGeo, boxMat);
       box.position.y = 6;
       group.add(box);
@@ -3039,9 +3382,10 @@ export function GameCanvas({
     // --- 14. DEFAULT GENERIC MODEL (CLEAN BRUTALIST SLATE) ---
     else {
       const boxGeo = new THREE.BoxGeometry(w, 24, h);
+      const boxTex = getProceduralTexture("#1e293b", 0.05, "concrete");
       const boxMat = new THREE.MeshStandardMaterial({
-        color: 0x1e293b,
-        metalness: 0.3,
+        map: boxTex,
+        metalness: 0.1,
         roughness: 0.6,
       });
       const boxMesh = new THREE.Mesh(boxGeo, boxMat);
@@ -3248,6 +3592,13 @@ export function GameCanvas({
       playerMesh.position.set(p.x, 0, p.y);
       playerMesh.rotation.y = -p.angle + Math.PI / 2;
 
+      // Invincibility flashing feedback
+      if (invincibilityTimeRef.current > 0) {
+        playerMesh.visible = (Math.floor(Date.now() / 80) % 2) === 0;
+      } else {
+        playerMesh.visible = true;
+      }
+
       // Dynamic limb swing animations
       const isMoving = p.isMoving;
       const walkCycle = Date.now() / 1000;
@@ -3258,19 +3609,33 @@ export function GameCanvas({
       const leftArm = playerMesh.getObjectByName("leftArm");
       const rightArm = playerMesh.getObjectByName("rightArm");
 
-      if (isMoving) {
-        const swingAngle = Math.sin(walkCycle * speedFactor) * 0.45;
-        if (leftLeg) leftLeg.rotation.x = swingAngle;
-        if (rightLeg) rightLeg.rotation.x = -swingAngle;
-        if (leftArm) leftArm.rotation.x = -swingAngle * 0.75;
-        if (rightArm) rightArm.rotation.x = swingAngle * 0.75;
+      if (meleeStrikeActive) {
+        // Extended punching pose
+        if (rightArm) rightArm.rotation.x = -Math.PI / 1.6;
+        if (leftArm) leftArm.rotation.x = Math.PI / 3;
+
+        // Emit electric impact sparks in front of player
+        if (Math.random() < 0.4) {
+          const punchAngle = p.angle;
+          const px = p.x + Math.cos(punchAngle) * 16 + (Math.random() - 0.5) * 5;
+          const pz = p.y + Math.sin(punchAngle) * 16 + (Math.random() - 0.5) * 5;
+          spawnThreeParticle(px, 12, pz, (Math.random() - 0.5) * 30, Math.random() * 20 + 10, (Math.random() - 0.5) * 30, 'slash', 0x06b6d4);
+        }
       } else {
-        // Return smoothly to idle state with breathing effect
-        const breath = Math.sin(walkCycle * 2.5) * 0.05;
-        if (leftLeg) leftLeg.rotation.x += (0 - leftLeg.rotation.x) * 0.15;
-        if (rightLeg) rightLeg.rotation.x += (0 - rightLeg.rotation.x) * 0.15;
-        if (leftArm) leftArm.rotation.x += (breath - leftArm.rotation.x) * 0.15;
-        if (rightArm) rightArm.rotation.x += (-breath - rightArm.rotation.x) * 0.15;
+        if (isMoving) {
+          const swingAngle = Math.sin(walkCycle * speedFactor) * 0.45;
+          if (leftLeg) leftLeg.rotation.x = swingAngle;
+          if (rightLeg) rightLeg.rotation.x = -swingAngle;
+          if (leftArm) leftArm.rotation.x = -swingAngle * 0.75;
+          if (rightArm) rightArm.rotation.x = swingAngle * 0.75;
+        } else {
+          // Return smoothly to idle state with breathing effect
+          const breath = Math.sin(walkCycle * 2.5) * 0.05;
+          if (leftLeg) leftLeg.rotation.x += (0 - leftLeg.rotation.x) * 0.15;
+          if (rightLeg) rightLeg.rotation.x += (0 - rightLeg.rotation.x) * 0.15;
+          if (leftArm) leftArm.rotation.x += (breath - leftArm.rotation.x) * 0.15;
+          if (rightArm) rightArm.rotation.x += (-breath - rightArm.rotation.x) * 0.15;
+        }
       }
 
       // --- Dynamic Head Movement ---
@@ -3357,8 +3722,7 @@ export function GameCanvas({
       if (ring && ring.material) {
         (ring.material as THREE.MeshBasicMaterial).color.setHex(isSpeeding ? 0xf59e0b : (characterClass === CharacterClass.RUNNER ? 0x3b82f6 : (characterClass === CharacterClass.MARCUS ? 0x15803d : 0xbe123c)));
       }
-
-      const camera = threeCameraRef.current;
+       const camera = threeCameraRef.current;
       if (camera) {
         // Dynamic look-ahead offset based on player facing angle (p.angle) to lead the view beautifully
         const lookAheadDist = 65;
@@ -3378,10 +3742,15 @@ export function GameCanvas({
         camera.lookAt(p.x + lookX * 0.4, 6, p.y + lookY * 0.4);
       }
 
+      // Keep directional light position centered around the player for consistent glossy specular reflections
+      if (dirLightRef.current) {
+        dirLightRef.current.position.set(p.x, 500, p.y);
+      }
+
       const flashlight = playerLightRef.current;
       if (flashlight) {
         const targetObj = flashlight.target;
-        targetObj.position.set(0, -15, 100);
+        targetObj.position.set(0, -10, 200); // Shine further down corridors
       }
     }
 
@@ -3394,7 +3763,7 @@ export function GameCanvas({
         
         const spot = new THREE.SpotLight(0xff1111, 15.0, 240, Math.PI / 4.5, 0.4, 0.5);
         spot.position.set(0, 32, 8);
-        spot.castShadow = true;
+        spot.castShadow = false; // Disabled to prevent exceeding WebGL's MAX_TEXTURE_IMAGE_UNITS limit of 16 and optimize rendering performance
         tMesh.add(spot);
 
         const targetObj = new THREE.Object3D();
@@ -3473,25 +3842,26 @@ export function GameCanvas({
           const bobSpeed = t.aiState === AIState.CHASING ? 15 : 6;
           tMesh.position.y = Math.abs(Math.sin(Date.now() / 1000 * bobSpeed)) * 1.8;
 
-          const spot = tMesh.children[tMesh.children.length - 2] as THREE.SpotLight;
-          if (spot) {
-            const targetObj = tMesh.children[tMesh.children.length - 1];
-            targetObj.position.set(0, -32, 120);
-            
-            if (t.aiState === AIState.CHASING) {
-              spot.color.setHex(0xff0000);
-              spot.intensity = 25.0;
-            } else {
-              spot.color.setHex(0xffaa44); 
-              spot.intensity = 10.0;
-            }
+            const spot = tMesh.children[tMesh.children.length - 2] as THREE.SpotLight;
+            if (spot) {
+              const targetObj = tMesh.children[tMesh.children.length - 1];
+              targetObj.position.set(0, -20, 180);
+              
+              if (t.aiState === AIState.CHASING) {
+                spot.color.setHex(0xff0000);
+                spot.intensity = 25.0;
+              } else {
+                spot.color.setHex(0xffaa44); 
+                spot.intensity = 10.0;
+              }
 
-            const isFrozen = (empActiveTimeRef.current > 0) || (characterClass === CharacterClass.FAIBE && playerRef.current.isPacifying);
-            if (isFrozen) {
-              spot.intensity = 0;
+              const isFrozen = (empActiveTimeRef.current > 0) || (characterClass === CharacterClass.FAIBE && playerRef.current.isPacifying);
+              
+              // Optimization: Disable the spotlight if the threat is frozen or too far away from the player
+              const distToPlayer = Math.sqrt((t.x - p.x) ** 2 + (t.y - p.y) ** 2);
+              spot.visible = distToPlayer < 280 && !isFrozen;
             }
           }
-        }
       });
     }
 
@@ -3591,7 +3961,7 @@ export function GameCanvas({
       const soundWaves = soundWavesRef.current;
       
       while (soundwavesGroup.children.length < soundWaves.length) {
-        const ringGeo = new THREE.RingGeometry(1, 1, 32);
+        const ringGeo = new THREE.RingGeometry(0.85, 1.0, 32);
         const ringMat = new THREE.MeshBasicMaterial({
           color: 0xef4444,
           side: THREE.DoubleSide,
@@ -3646,8 +4016,8 @@ export function GameCanvas({
     let tx = canvas.width / 2 - p.x * zoom;
     let ty = canvas.height / 2 - p.y * zoom;
 
-    // Clamp camera translation so we do not render beyond map bounds (900x1000)
-    const minTx = canvas.width - 900 * zoom;
+    // Clamp camera translation so we do not render beyond map bounds (4500x1000)
+    const minTx = canvas.width - 4500 * zoom;
     const minTy = canvas.height - 1000 * zoom;
     tx = Math.max(minTx, Math.min(0, tx));
     ty = Math.max(minTy, Math.min(0, ty));
@@ -3661,7 +4031,7 @@ export function GameCanvas({
     ctx.scale(zoom, zoom);
 
     // 1. Draw static Blueprint background
-    ctx.drawImage(cache.map, 0, 0, 900, 1000);
+    ctx.drawImage(cache.map, 0, 0, 4500, 1000);
 
     // 1.5. Draw procedurally altered level obstacles for visual indicators
     if (currentFloor !== 5) {
@@ -4298,10 +4668,10 @@ export function GameCanvas({
           />
           <canvas
             ref={canvas3DRef}
-            width={900}
+            width={1600}
             height={1000}
             id="game-board-canvas-3d"
-            className={`${is3DMode ? "block" : "hidden"} max-w-full max-h-[80vh] aspect-[9/10] object-contain cursor-crosshair relative bg-slate-950`}
+            className={`${is3DMode ? "block" : "hidden"} w-full max-h-[80vh] aspect-[16/10] object-contain cursor-crosshair relative bg-slate-950`}
           />
         </div>
 
